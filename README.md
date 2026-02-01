@@ -1,6 +1,12 @@
-# 📧 ClawMail
+<p align="center">
+  <img src="clawmail-logo.png" alt="ClawMail" width="200">
+</p>
 
-Email proxy for AI agents. Create custom email addresses, receive mail, poll from your agent.
+<h1 align="center">📧 ClawMail</h1>
+
+<p align="center">Email proxy for AI agents. Create custom email addresses, receive mail, poll from your agent.</p>
+
+---
 
 ## How It Works
 
@@ -38,7 +44,8 @@ npx wrangler deploy
 ### Configure Email Routing
 
 1. In Cloudflare dashboard, go to your domain → Email Routing
-2. Add a catch-all rule that routes to the ClawMail worker
+2. Enable Email Routing
+3. Add a catch-all rule that routes to the ClawMail worker
 
 ## API
 
@@ -91,6 +98,52 @@ curl -X DELETE https://clawmail.dev/api/mail/{id} \
 ```bash
 curl -X DELETE https://clawmail.dev/api/addresses/me \
   -H "Authorization: Bearer cm_abc123..."
+```
+
+## OpenClaw Skill
+
+ClawMail ships with an [OpenClaw](https://github.com/openclaw/openclaw) skill in `skill/` for direct agent integration.
+
+### Install
+
+Copy the skill folder to your OpenClaw skills directory:
+
+```bash
+cp -r skill/ ~/.openclaw/skills/clawmail
+```
+
+Add your token to `openclaw.json`:
+
+```json
+{
+  "skills": {
+    "entries": {
+      "clawmail": {
+        "env": {
+          "CLAWMAIL_TOKEN": "cm_your_token_here",
+          "CLAWMAIL_API_URL": "https://clawmail.dev"
+        }
+      }
+    }
+  }
+}
+```
+
+### Usage
+
+Once installed, your agent can check email conversationally:
+
+- *"Check my email"*
+- *"Any new mail?"*
+- *"Read my clawmail inbox"*
+
+Or use the CLI directly:
+
+```bash
+clawmail.sh inbox --unread
+clawmail.sh read <id>
+clawmail.sh mark-read <id>
+clawmail.sh create <local> <recovery_email>
 ```
 
 ## Architecture
