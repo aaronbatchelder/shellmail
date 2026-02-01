@@ -97,6 +97,64 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   );
 }
 
+/** Send an email via MailChannels (free for Cloudflare Workers) */
+async function sendEmail(
+  to: string,
+  subject: string,
+  body: string
+): Promise<boolean> {
+  try {
+    const resp = await fetch("https://api.mailchannels.net/tx/v1/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: "noreply@clawmail.dev", name: "ClawMail" },
+        subject,
+        content: [{ type: "text/plain", value: body }],
+      }),
+    });
+    return resp.status === 202 || resp.status === 200;
+  } catch (e) {
+    console.error("MailChannels send failed:", e);
+    return false;
+  }
+}
+
+/** Simple rate limiter using D1 — max attempts per address per hour */
+async function checkRateLimit(
+  db: D1Database,
+  key: string,
+  maxAttempts: number,
+  windowMs: number
+): Promise<boolean> {
+  const windowStart = new Date(Date.now() - windowMs).toISOString();
+
+  // Clean old entries
+  await db
+    .prepare("DELETE FROM rate_limits WHERE key = ? AND created_at < ?")
+    .bind(key, windowStart)
+    .run();
+
+  // Count recent attempts
+  const count = await db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM rate_limits WHERE key = ? AND created_at >= ?"
+    )
+    .bind(key, windowStart)
+    .first<{ cnt: number }>();
+
+  if ((count?.cnt || 0) >= maxAttempts) return false;
+
+  // Record this attempt
+  await db
+    .prepare("INSERT INTO rate_limits (key, created_at) VALUES (?, ?)")
+    .bind(key, new Date().toISOString())
+    .run();
+
+  return true;
+}
+
 /** POST /api/recover — request token recovery via email */
 async function recoverToken(request: Request, env: Env): Promise<Response> {
   let body: RecoverRequest;
@@ -117,6 +175,20 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
   if (parts.length !== 2) return error("Invalid address format");
   const [localPart, domain] = parts;
 
+  // Rate limit: max 3 recovery attempts per address per hour
+  const allowed = await checkRateLimit(
+    env.DB,
+    `recover:${localPart.toLowerCase()}@${domain}`,
+    3,
+    60 * 60 * 1000
+  );
+  if (!allowed) {
+    return error("Too many recovery attempts. Try again later.", 429);
+  }
+
+  const GENERIC_MSG =
+    "If the address and recovery email match, a new token will be sent.";
+
   // Look up address
   const recoveryHash = await hash(recovery_email);
   const addr = await env.DB.prepare(
@@ -125,11 +197,9 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
     .bind(localPart.toLowerCase(), domain, recoveryHash)
     .first<Address>();
 
-  // Always return success (prevent enumeration)
+  // Always return same response (prevent enumeration)
   if (!addr) {
-    return json({
-      message: "If the address and recovery email match, a new token will be sent.",
-    });
+    return json({ message: GENERIC_MSG });
   }
 
   // Generate new token and update
@@ -140,13 +210,24 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
     .bind(newTokenHash, addr.id)
     .run();
 
-  // TODO: Actually send the recovery email via an email service
-  // For MVP, we'll return the token directly (change this before production!)
-  return json({
-    message: "If the address and recovery email match, a new token will be sent.",
-    // TEMPORARY for MVP testing — remove before production
-    _dev_token: newToken,
-  });
+  // Send recovery email via MailChannels
+  const emailBody = `Your ClawMail token has been reset.
+
+Address: ${localPart}@${domain}
+New Token: ${newToken}
+
+Save this token — it will not be shown again.
+If you did not request this, your token has been changed. Contact support.
+
+— ClawMail (clawmail.dev)`;
+
+  await sendEmail(
+    recovery_email,
+    `ClawMail Token Recovery — ${localPart}@${domain}`,
+    emailBody
+  );
+
+  return json({ message: GENERIC_MSG });
 }
 
 /** GET /api/mail — list emails for the authenticated address */
