@@ -8,7 +8,7 @@ DOMAIN = "clawmail.dev"
 [[d1_databases]]
 binding = "DB"
 database_name = "clawmail"
-database_id = "TODO_REPLACE_WITH_D1_ID"
+database_id = "2c80e2f0-272c-42b7-a2d1-841c8b08eb08"
 
 # Email routing — uncomment once email worker is wired up
 # [[email_routing]]
