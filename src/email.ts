@@ -91,6 +91,12 @@ export default {
       return;
     }
 
+    if (addr.status !== "active") {
+      console.log(`Address ${parsed.to} is disabled, rejection email`);
+      message.setReject("Address is disabled");
+      return;
+    }
+
     // Store the email
     const emailId = generateId();
     await env.DB.prepare(

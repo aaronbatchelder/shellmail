@@ -11,6 +11,7 @@ export interface Address {
   recovery_hash: string;
   created_at: string;
   max_messages: number;
+  status: "active" | "disabled";
 }
 
 export interface Email {
