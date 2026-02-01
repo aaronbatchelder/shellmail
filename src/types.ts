@@ -10,6 +10,7 @@ export interface Address {
   token_hash: string;
   recovery_hash: string;
   created_at: string;
+  max_messages: number;
 }
 
 export interface Email {

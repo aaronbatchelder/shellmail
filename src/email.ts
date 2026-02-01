@@ -111,5 +111,26 @@ export default {
     console.log(
       `Stored email ${emailId} for ${parsed.to} from ${parsed.from}: ${parsed.subject}`
     );
+
+    // Enforce message limit (FIFO) if set
+    // 0 = unlimited
+    if (addr.max_messages > 0) {
+      try {
+        await env.DB.prepare(
+          `DELETE FROM emails 
+           WHERE address_id = ? 
+           AND id NOT IN (
+             SELECT id FROM emails 
+             WHERE address_id = ? 
+             ORDER BY received_at DESC 
+             LIMIT ?
+           )`
+        )
+          .bind(addr.id, addr.id, addr.max_messages)
+          .run();
+      } catch (e) {
+        console.error("Failed to enforce message limit:", e);
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;
