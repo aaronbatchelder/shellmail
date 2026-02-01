@@ -346,8 +346,12 @@ export default {
 
     if (!route) {
       // Health check
-      if (url.pathname === "/" || url.pathname === "/health") {
+      if (url.pathname === "/health") {
         return json({ service: "clawmail", status: "ok", domain: env.DOMAIN });
+      }
+      // Docs redirect to landing page API section
+      if (url.pathname === "/docs") {
+        return Response.redirect(new URL("/#api-docs", url.origin).toString(), 302);
       }
       return error("Not found", 404);
     }
