@@ -13,7 +13,7 @@ Set in `openclaw.json` under `skills.entries.clawmail`:
 
 ```json
 {
-  "apiUrl": "https://clawmail.ngmaloney.workers.dev",
+  "apiUrl": "https://clawmail.dev",
   "token": "cm_..."
 }
 ```

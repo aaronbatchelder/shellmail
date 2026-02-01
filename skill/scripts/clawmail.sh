@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Config: set via env or openclaw skill config
-API_URL="${CLAWMAIL_API_URL:-https://clawmail.ngmaloney.workers.dev}"
+API_URL="${CLAWMAIL_API_URL:-https://clawmail.dev}"
 TOKEN="${CLAWMAIL_TOKEN:-}"
 
 usage() {
@@ -25,7 +25,7 @@ Commands:
 
 Environment:
   CLAWMAIL_TOKEN            Bearer token (required for most commands)
-  CLAWMAIL_API_URL          API base URL (default: https://clawmail.ngmaloney.workers.dev)
+  CLAWMAIL_API_URL          API base URL (default: https://clawmail.dev)
 EOF
   exit 1
 }

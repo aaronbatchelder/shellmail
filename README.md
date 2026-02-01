@@ -46,7 +46,7 @@ npx wrangler deploy
 
 **Create address:**
 ```bash
-curl -X POST https://clawmail.YOUR_DOMAIN/api/addresses \
+curl -X POST https://clawmail.dev/api/addresses \
   -H "Content-Type: application/json" \
   -d '{"local": "pinchy", "recovery_email": "you@gmail.com"}'
 # → {"address": "pinchy@clawmail.dev", "token": "cm_abc123..."}
@@ -54,7 +54,7 @@ curl -X POST https://clawmail.YOUR_DOMAIN/api/addresses \
 
 **Recover token:**
 ```bash
-curl -X POST https://clawmail.YOUR_DOMAIN/api/recover \
+curl -X POST https://clawmail.dev/api/recover \
   -H "Content-Type: application/json" \
   -d '{"address": "pinchy@clawmail.dev", "recovery_email": "you@gmail.com"}'
 ```
@@ -63,19 +63,19 @@ curl -X POST https://clawmail.YOUR_DOMAIN/api/recover \
 
 **List mail:**
 ```bash
-curl https://clawmail.YOUR_DOMAIN/api/mail \
+curl https://clawmail.dev/api/mail \
   -H "Authorization: Bearer cm_abc123..."
 ```
 
 **Get email:**
 ```bash
-curl https://clawmail.YOUR_DOMAIN/api/mail/{id} \
+curl https://clawmail.dev/api/mail/{id} \
   -H "Authorization: Bearer cm_abc123..."
 ```
 
 **Mark read:**
 ```bash
-curl -X PATCH https://clawmail.YOUR_DOMAIN/api/mail/{id} \
+curl -X PATCH https://clawmail.dev/api/mail/{id} \
   -H "Authorization: Bearer cm_abc123..." \
   -H "Content-Type: application/json" \
   -d '{"is_read": true}'
@@ -83,13 +83,13 @@ curl -X PATCH https://clawmail.YOUR_DOMAIN/api/mail/{id} \
 
 **Delete email:**
 ```bash
-curl -X DELETE https://clawmail.YOUR_DOMAIN/api/mail/{id} \
+curl -X DELETE https://clawmail.dev/api/mail/{id} \
   -H "Authorization: Bearer cm_abc123..."
 ```
 
 **Delete address (and all mail):**
 ```bash
-curl -X DELETE https://clawmail.YOUR_DOMAIN/api/addresses/me \
+curl -X DELETE https://clawmail.dev/api/addresses/me \
   -H "Authorization: Bearer cm_abc123..."
 ```
 
