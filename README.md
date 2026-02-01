@@ -1,6 +1,8 @@
-<h1 align="center">📧 ClawMail</h1>
+<p align="center">
+  <img src="clawmail-logo.png" alt="ClawMail" width="200">
+</p>
 
-<p align="center">Email proxy for AI agents. Create custom email addresses, receive mail, poll from your agent.</p>
+<p align="center"><strong>Email proxy for AI agents.</strong> Create custom email addresses, receive mail, poll from your agent.</p>
 
 ---
 
