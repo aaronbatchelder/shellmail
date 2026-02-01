@@ -840,7 +840,7 @@
       <div class="feature-card reveal reveal-delay-1">
         <div class="feature-icon">🔐</div>
         <h3>Token Authentication</h3>
-        <p>Every address gets a unique bearer token on creation. No OAuth flows, no API keys to manage. Just pass the token in the Authorization header. Revoke and rotate via the recovery email.</p>
+        <p>Every address gets a unique bearer token on creation. No OAuth flows, no API keys to manage. Just pass the token in the Authorization header. Lost your token? Recovery is emailed securely — never exposed via API. Rate limited to prevent abuse.</p>
       </div>
       <div class="feature-card reveal reveal-delay-2">
         <div class="feature-icon">⚡</div>
@@ -1183,14 +1183,16 @@
     },
     recover: {
       title: 'recover token',
-      code: `<span class="comment"># Recover token via recovery email</span>
+      code: `<span class="comment"># Recover token — new token is emailed to recovery address</span>
+<span class="comment"># Rate limited: 3 attempts per address per hour</span>
 <span class="prompt">$</span> <span class="cmd">curl -X POST https://clawmail.dev/api/recover \\
   -H <span class="string">"Content-Type: application/json"</span> \\
   -d <span class="string">'{"address":"my-agent@clawmail.dev","recovery_email":"you@email.com"}'</span></span>
 
 <span class="response">{
   <span class="key">"message"</span>: <span class="string">"If the address and recovery email match, a new token will be sent."</span>
-}</span>`,
+}</span>
+<span class="comment"># Token is NEVER returned in the response — check your email</span>`,
       raw: `curl -X POST https://clawmail.dev/api/recover \\
   -H "Content-Type: application/json" \\
   -d '{"address":"my-agent@clawmail.dev","recovery_email":"you@email.com"}'`

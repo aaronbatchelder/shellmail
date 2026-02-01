@@ -62,6 +62,8 @@ curl -X POST https://clawmail.dev/api/addresses \
 curl -X POST https://clawmail.dev/api/recover \
   -H "Content-Type: application/json" \
   -d '{"address": "pinchy@clawmail.dev", "recovery_email": "you@gmail.com"}'
+# → New token emailed to recovery address (never returned in response)
+# Rate limited: 3 attempts per address per hour
 ```
 
 ### Authenticated Endpoints (Bearer token)
@@ -153,6 +155,14 @@ Agent polls → Cloudflare API Worker ──────────┘
 ```
 
 All Cloudflare. Zero servers. Scales to zero cost at low volume.
+
+## Security
+
+- **Token-per-address** — each address has its own bearer token, scoped only to that address
+- **Recovery via email only** — lost tokens are sent to the recovery email via MailChannels, never returned in API responses
+- **Rate limiting** — recovery endpoint limited to 3 attempts per address per hour
+- **Anti-enumeration** — recovery responses are identical whether the address exists or not
+- **Hashed storage** — tokens and recovery emails are SHA-256 hashed in D1, never stored in plaintext
 
 ## License
 
