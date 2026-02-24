@@ -1,0 +1,19 @@
+{
+  "name": "shellmail",
+  "version": "1.0.2",
+  "description": "Email API for AI agents. Check inbox, read emails, extract OTP codes, search messages via ShellMail.",
+  "homepage": "https://shellmail.ai",
+  "source": "https://github.com/aaronbatchelder/shellmail",
+  "env": {
+    "SHELLMAIL_TOKEN": {
+      "required": true,
+      "sensitive": true,
+      "description": "Bearer token for ShellMail API authentication"
+    },
+    "SHELLMAIL_API_URL": {
+      "required": false,
+      "default": "https://shellmail.ai",
+      "description": "API base URL (only change for self-hosted instances)"
+    }
+  }
+}
