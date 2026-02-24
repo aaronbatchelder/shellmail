@@ -130,12 +130,11 @@ program
     // Show OpenClaw integration snippet
     console.log(chalk.bold("─".repeat(50)));
     console.log(chalk.bold("\nOpenClaw Integration\n"));
-    console.log(chalk.gray("Add this to your openclaw.json:\n"));
-    console.log(chalk.cyan(`"shellmail": {
-  "apiUrl": "https://shellmail.ai",
-  "token": "${result.token}"
-}`));
-    console.log(chalk.gray("\n(inside skills.entries)\n"));
+    console.log(chalk.gray("Install the skill from ClawHub:\n"));
+    console.log(chalk.cyan("  clawhub install aaronbatchelder/shellmail\n"));
+    console.log(chalk.gray("Then set your token:\n"));
+    console.log(chalk.cyan(`  export SHELLMAIL_TOKEN="${result.token}"\n`));
+    console.log(chalk.gray("Or add to your openclaw.json under skills.entries.shellmail.env\n"));
 
     // Show CLI commands
     console.log(chalk.bold("─".repeat(50)));

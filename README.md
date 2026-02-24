@@ -20,8 +20,16 @@
 
 ## Quick Start
 
+**For everyone** — Create an inbox and start receiving email:
+
 ```bash
 npx shellmail setup
+```
+
+**For OpenClaw users** — Install the skill, then your agent can check email conversationally:
+
+```bash
+clawhub install shellmail
 ```
 
 That's it. You now have `yourname@shellmail.ai` ready to receive mail.

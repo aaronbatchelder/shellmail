@@ -45,6 +45,32 @@ async function authenticate(
   return addr;
 }
 
+// ── Admin Stats ─────────────────────────────────────────
+
+async function getStats(env: Env) {
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [addresses, emails, emailsToday, emailsWeek, addressesToday] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) as count FROM addresses").first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) as count FROM emails").first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) as count FROM emails WHERE date(received_at) = ?").bind(today).first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) as count FROM emails WHERE received_at >= ?").bind(weekAgo).first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) as count FROM addresses WHERE date(created_at) = ?").bind(today).first<{ count: number }>(),
+  ]);
+
+  return {
+    total_addresses: addresses?.count || 0,
+    total_emails: emails?.count || 0,
+    emails_today: emailsToday?.count || 0,
+    emails_this_week: emailsWeek?.count || 0,
+    signups_today: addressesToday?.count || 0,
+    generated_at: now.toISOString(),
+  };
+}
+
 // ── Routes ───────────────────────────────────────────────
 
 /** POST /api/addresses — create a new email address */
@@ -681,6 +707,15 @@ export default {
       // Health check
       if (url.pathname === "/health") {
         return json({ service: "shellmail", status: "ok", domain: env.DOMAIN });
+      }
+      // Admin stats (protected by secret)
+      if (url.pathname === "/api/admin/stats") {
+        const secret = url.searchParams.get("secret");
+        if (secret !== env.ADMIN_SECRET) {
+          return error("Unauthorized", 401);
+        }
+        const stats = await getStats(env);
+        return json(stats);
       }
       // Docs redirect to landing page API section
       if (url.pathname === "/docs") {

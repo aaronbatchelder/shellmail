@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   DOMAIN: string;
+  ADMIN_SECRET?: string;
   ctx?: ExecutionContext;
 }
 
