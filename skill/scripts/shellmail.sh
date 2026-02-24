@@ -40,6 +40,19 @@ auth_header() {
   echo "Authorization: Bearer $TOKEN"
 }
 
+# URL-encode a string for safe use in query parameters
+urlencode() {
+  local string="$1"
+  python3 -c "import urllib.parse; print(urllib.parse.quote('$string', safe=''))" 2>/dev/null || \
+  printf '%s' "$string" | sed 's/ /%20/g; s/!/%21/g; s/"/%22/g; s/#/%23/g; s/\$/%24/g; s/&/%26/g; s/'\''/%27/g; s/(/%28/g; s/)/%29/g; s/+/%2B/g; s/,/%2C/g; s/:/%3A/g; s/;/%3B/g; s/=/%3D/g; s/?/%3F/g; s/@/%40/g'
+}
+
+# Escape a string for safe JSON embedding
+json_escape() {
+  local string="$1"
+  printf '%s' "$string" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g' | tr -d '\n'
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -62,7 +75,7 @@ case "$cmd" in
 
   read)
     [ -z "${1:-}" ] && { echo "Usage: shellmail read <id>" >&2; exit 1; }
-    curl -sf "$API_URL/api/mail/$1" -H "$(auth_header)"
+    curl -sf "$API_URL/api/mail/$(urlencode "$1")" -H "$(auth_header)"
     ;;
 
   otp)
@@ -70,7 +83,7 @@ case "$cmd" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --wait) PARAMS="${PARAMS}&timeout=$((${2}*1000))"; shift 2 ;;
-        --from) PARAMS="${PARAMS}&from=$2"; shift 2 ;;
+        --from) PARAMS="${PARAMS}&from=$(urlencode "$2")"; shift 2 ;;
         *) shift ;;
       esac
     done
@@ -82,8 +95,8 @@ case "$cmd" in
     PARAMS=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --query|-q) PARAMS="${PARAMS}&q=$2"; shift 2 ;;
-        --from|-f) PARAMS="${PARAMS}&from=$2"; shift 2 ;;
+        --query|-q) PARAMS="${PARAMS}&q=$(urlencode "$2")"; shift 2 ;;
+        --from|-f) PARAMS="${PARAMS}&from=$(urlencode "$2")"; shift 2 ;;
         --otp) PARAMS="${PARAMS}&has_otp=true"; shift ;;
         --limit|-n) PARAMS="${PARAMS}&limit=$2"; shift 2 ;;
         *) shift ;;
@@ -95,7 +108,7 @@ case "$cmd" in
 
   mark-read)
     [ -z "${1:-}" ] && { echo "Usage: shellmail mark-read <id>" >&2; exit 1; }
-    curl -sf -X PATCH "$API_URL/api/mail/$1" \
+    curl -sf -X PATCH "$API_URL/api/mail/$(urlencode "$1")" \
       -H "$(auth_header)" \
       -H "Content-Type: application/json" \
       -d '{"is_read": true}'
@@ -103,7 +116,7 @@ case "$cmd" in
 
   mark-unread)
     [ -z "${1:-}" ] && { echo "Usage: shellmail mark-unread <id>" >&2; exit 1; }
-    curl -sf -X PATCH "$API_URL/api/mail/$1" \
+    curl -sf -X PATCH "$API_URL/api/mail/$(urlencode "$1")" \
       -H "$(auth_header)" \
       -H "Content-Type: application/json" \
       -d '{"is_read": false}'
@@ -111,7 +124,7 @@ case "$cmd" in
 
   archive)
     [ -z "${1:-}" ] && { echo "Usage: shellmail archive <id>" >&2; exit 1; }
-    curl -sf -X PATCH "$API_URL/api/mail/$1" \
+    curl -sf -X PATCH "$API_URL/api/mail/$(urlencode "$1")" \
       -H "$(auth_header)" \
       -H "Content-Type: application/json" \
       -d '{"is_archived": true}'
@@ -119,7 +132,7 @@ case "$cmd" in
 
   delete)
     [ -z "${1:-}" ] && { echo "Usage: shellmail delete <id>" >&2; exit 1; }
-    curl -sf -X DELETE "$API_URL/api/mail/$1" -H "$(auth_header)"
+    curl -sf -X DELETE "$API_URL/api/mail/$(urlencode "$1")" -H "$(auth_header)"
     ;;
 
   addresses)
@@ -131,14 +144,14 @@ case "$cmd" in
     [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: shellmail create <local> <recovery_email>" >&2; exit 1; }
     curl -sf -X POST "$API_URL/api/addresses" \
       -H "Content-Type: application/json" \
-      -d "{\"local\": \"$1\", \"recovery_email\": \"$2\"}"
+      -d "{\"local\": \"$(json_escape "$1")\", \"recovery_email\": \"$(json_escape "$2")\"}"
     ;;
 
   recover)
     [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: shellmail recover <address> <recovery_email>" >&2; exit 1; }
     curl -sf -X POST "$API_URL/api/recover" \
       -H "Content-Type: application/json" \
-      -d "{\"address\": \"$1\", \"recovery_email\": \"$2\"}"
+      -d "{\"address\": \"$(json_escape "$1")\", \"recovery_email\": \"$(json_escape "$2")\"}"
     ;;
 
   delete-address)
