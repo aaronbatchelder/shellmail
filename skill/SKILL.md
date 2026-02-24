@@ -23,14 +23,28 @@ Email for AI agents via shellmail.ai. Create inboxes, receive mail, extract OTPs
 If no token is configured:
 
 1. Ask user for desired email name (e.g., "atlas") and a recovery email
+   - Or use `auto` for the name to generate a random address (e.g., "swift-reef-4821")
 2. Run: `{baseDir}/scripts/shellmail.sh create <name> <recovery_email>`
-3. Save the returned token:
+3. If the address is already taken:
+   - Suggest a different name or use `auto`
+   - Do NOT suggest recovery unless the user confirms it's their previous inbox
+4. Save the returned token:
 
 ```
 gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":"sm_..."}}}}}
 ```
 
-4. Tell user to save the token safely — it won't be shown again
+5. Tell user to save the token safely — it won't be shown again
+
+## Token Recovery
+
+Only use recovery if the user explicitly says they lost access to an existing inbox they own:
+
+```bash
+{baseDir}/scripts/shellmail.sh recover <address@shellmail.ai> <recovery_email>
+```
+
+This sends a new token to the recovery email on file. Do not suggest this for "address taken" errors.
 
 ## Commands
 
