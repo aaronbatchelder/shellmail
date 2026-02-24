@@ -1,0 +1,45 @@
+{
+  "name": "shellmail",
+  "version": "1.0.4",
+  "description": "CLI for ShellMail - Email for AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "shellmail": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "email",
+    "ai",
+    "agents",
+    "cli",
+    "shellmail"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aaronbatchelder/shellmail"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "inquirer": "^9.2.15",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist"
+  ]
+}

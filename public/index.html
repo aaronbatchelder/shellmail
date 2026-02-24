@@ -3,192 +3,83 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ClawMail — Inboxes for agents, not humans</title>
-  <meta name="description" content="Give your AI agent a real email address. Receive, read, and manage email via a simple REST API. No servers required.">
-  <meta name="theme-color" content="#0a0e27">
-  <meta property="og:title" content="ClawMail — Inboxes for agents, not humans">
-  <meta property="og:description" content="Give your AI agent a real email address. Receive, read, and manage email via a simple REST API.">
+  <title>ShellMail — Email for AI agents</title>
+  <meta name="description" content="Give your AI agent a real email address. Receive, read, and extract OTPs via a simple REST API. Chill.">
+  <meta name="theme-color" content="#faf6f1">
+  <meta property="og:title" content="ShellMail — Email for AI agents">
+  <meta property="og:description" content="Give your AI agent a real email address. Receive, read, and extract OTPs via a simple REST API.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://clawmail.dev">
-  <meta property="og:image" content="https://clawmail.dev/logo.png">
-  <link rel="icon" type="image/png" href="/logo.png">
+  <meta property="og:url" content="https://shellmail.ai">
+  <meta property="og:image" content="https://shellmail.ai/logo.png">
+  <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    /* ── Reset & Base ───────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #060918;
-      color: #c8cce8;
-      line-height: 1.7;
-      overflow-x: hidden;
+    html { scroll-behavior: smooth; }
+
+    :root {
+      --sand: #faf6f1;
+      --sand-dark: #f0ebe4;
+      --sand-darker: #e5dfd6;
+      --ocean: #4ecdc4;
+      --ocean-deep: #3db9b1;
+      --ocean-light: #a8e6e1;
+      --coral: #f07c6c;
+      --coral-light: #f4a896;
+      --golden: #f5c563;
+      --golden-light: #fad88a;
+      --text: #2d3436;
+      --text-light: #636e72;
+      --text-muted: #9ca8ad;
+      --white: #ffffff;
     }
+
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--sand);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, .mono { font-family: 'DM Mono', monospace; }
     a { color: inherit; text-decoration: none; }
     img { max-width: 100%; display: block; }
-    code { font-family: 'JetBrains Mono', monospace; }
 
-    /* ── Color Tokens ──────────────────────────── */
-    :root {
-      --bg-deep: #060918;
-      --bg-base: #0a0e27;
-      --bg-surface: #111640;
-      --bg-card: #141938;
-      --bg-card-hover: #1a2048;
-      --text-primary: #eef0ff;
-      --text-secondary: #8b92c4;
-      --text-muted: #5b6196;
-      --accent: #f97316;
-      --accent-light: #fb923c;
-      --accent-glow: rgba(249, 115, 22, 0.12);
-      --accent-glow-strong: rgba(249, 115, 22, 0.25);
-      --border: rgba(139, 146, 196, 0.08);
-      --border-light: rgba(139, 146, 196, 0.15);
-      --code-bg: #0c1021;
-      --success: #22c55e;
-      --radius: 16px;
-      --radius-sm: 10px;
-      --radius-xs: 6px;
-    }
-
-    /* ── Utilities ──────────────────────────────── */
     .container {
-      max-width: 1200px;
+      max-width: 1100px;
       margin: 0 auto;
       padding: 0 24px;
     }
-    .gradient-text {
-      background: linear-gradient(135deg, var(--accent) 0%, #fbbf24 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      border: 1px solid var(--border-light);
-      background: var(--bg-card);
-      color: var(--accent);
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 28px;
-      border-radius: var(--radius-sm);
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-      box-shadow: 0 0 30px var(--accent-glow-strong), 0 4px 12px rgba(0,0,0,0.3);
-    }
-    .btn-primary:hover {
-      background: var(--accent-light);
-      transform: translateY(-1px);
-      box-shadow: 0 0 40px var(--accent-glow-strong), 0 6px 20px rgba(0,0,0,0.4);
-    }
-    .btn-secondary {
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border-light);
-    }
-    .btn-secondary:hover {
-      background: var(--bg-card-hover);
-      border-color: var(--accent);
-    }
 
-    /* ── Animated Background ───────────────────── */
-    .bg-glow {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      pointer-events: none;
-      z-index: 0;
-      overflow: hidden;
-    }
-    .bg-glow::before {
-      content: '';
-      position: absolute;
-      top: -20%;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 800px;
-      height: 800px;
-      background: radial-gradient(circle, rgba(249,115,22,0.06) 0%, transparent 70%);
-      animation: pulse 8s ease-in-out infinite;
-    }
-    .bg-glow::after {
-      content: '';
-      position: absolute;
-      bottom: 20%;
-      right: -10%;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(99,102,241,0.04) 0%, transparent 70%);
-      animation: pulse 12s ease-in-out infinite reverse;
-    }
-    @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-
-    /* ── Grid Lines (subtle) ───────────────────── */
-    .grid-bg {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-image:
-        linear-gradient(var(--border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--border) 1px, transparent 1px);
-      background-size: 80px 80px;
-      pointer-events: none;
-      z-index: 0;
-      opacity: 0.4;
-    }
-
-    /* ── Navigation ────────────────────────────── */
+    /* ── Nav ─────────────────────────────────────── */
     nav {
+      padding: 20px 0;
       position: fixed;
       top: 0; left: 0; right: 0;
       z-index: 100;
-      padding: 16px 0;
       transition: all 0.3s ease;
     }
     nav.scrolled {
-      background: rgba(6, 9, 24, 0.85);
+      background: rgba(250, 246, 241, 0.9);
       backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 0;
+      box-shadow: 0 1px 0 var(--sand-dark);
     }
     nav .container {
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    nav a, nav .nav-brand span { color: #ffffff; }
     .nav-brand {
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-size: 20px;
+      gap: 10px;
       font-weight: 700;
-      color: var(--text-primary);
+      font-size: 18px;
     }
-    .nav-brand img {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-    }
+    .nav-brand img { width: 32px; height: 32px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
     .nav-links {
       display: flex;
       align-items: center;
@@ -196,450 +87,419 @@
       list-style: none;
     }
     .nav-links a {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 500;
-      color: #ffffff;
+      color: var(--text-light);
       transition: color 0.2s;
     }
-    .nav-links a:hover { color: var(--accent-light); }
-    .nav-cta {
-      padding: 10px 20px !important;
-      font-size: 14px !important;
-    }
-    .mobile-toggle {
-      display: none;
-      background: none;
+    .nav-links a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-size: 15px;
+      font-weight: 600;
       border: none;
-      color: var(--text-primary);
-      font-size: 24px;
       cursor: pointer;
-      padding: 8px;
+      transition: all 0.2s ease;
+    }
+    .btn-primary {
+      background: var(--ocean);
+      color: var(--white);
+    }
+    .btn-primary:hover {
+      background: var(--ocean-deep);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
+    }
+    .btn-secondary {
+      background: var(--white);
+      color: var(--text);
+      border: 1px solid var(--sand-darker);
+    }
+    .btn-secondary:hover {
+      border-color: var(--ocean);
+      background: var(--sand);
     }
 
-    /* ── Section Shared ────────────────────────── */
-    section {
-      position: relative;
-      z-index: 1;
-      padding: 120px 0;
-    }
-    .section-label {
-      text-transform: uppercase;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: var(--accent);
-      margin-bottom: 16px;
-    }
-    .section-title {
-      font-size: clamp(32px, 4vw, 48px);
-      font-weight: 800;
-      color: var(--text-primary);
-      line-height: 1.2;
-      margin-bottom: 20px;
-    }
-    .section-subtitle {
-      font-size: 18px;
-      color: var(--text-secondary);
-      max-width: 600px;
-      line-height: 1.7;
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
     }
 
-    /* ── Hero ───────────────────────────────────── */
+    /* ── Hero ────────────────────────────────────── */
     .hero {
-      padding-top: 160px;
-      padding-bottom: 120px;
+      padding: 160px 0 100px;
       text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 100%;
+      background: linear-gradient(180deg, var(--sand) 0%, var(--sand-dark) 100%);
+      z-index: -1;
     }
     .hero-logo {
-      width: 100px;
-      height: 100px;
-      margin: 0 auto 32px;
-      border-radius: 24px;
-      box-shadow: 0 0 60px var(--accent-glow-strong), 0 20px 60px rgba(0,0,0,0.5);
-      animation: float 6s ease-in-out infinite;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 40px;
+      border-radius: 28px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      animation: float 4s ease-in-out infinite;
     }
     @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-12px) rotate(2deg); }
     }
     .hero h1 {
-      font-size: clamp(44px, 6vw, 76px);
-      font-weight: 800;
-      color: var(--text-primary);
+      font-size: clamp(40px, 6vw, 64px);
+      font-weight: 700;
       line-height: 1.1;
-      margin-bottom: 24px;
-      letter-spacing: -0.03em;
+      margin-bottom: 20px;
+      letter-spacing: -0.02em;
     }
-    .hero h1 .accent { color: var(--accent); }
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--coral) 0%, var(--ocean) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
     .hero p {
-      font-size: clamp(17px, 2vw, 20px);
-      color: var(--text-secondary);
-      max-width: 580px;
+      font-size: 20px;
+      color: var(--text-light);
+      max-width: 620px;
       margin: 0 auto 40px;
-      line-height: 1.7;
     }
     .hero-actions {
       display: flex;
       gap: 16px;
       justify-content: center;
       flex-wrap: wrap;
-      margin-bottom: 64px;
     }
-    .hero-terminal {
-      max-width: 620px;
-      margin: 0 auto;
-      background: var(--code-bg);
-      border: 1px solid var(--border-light);
-      border-radius: var(--radius);
+
+    /* ── Wave Divider ────────────────────────────── */
+    .wave {
+      height: 80px;
+      background: var(--sand-dark);
+      position: relative;
+    }
+    .wave::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 80px;
+      background: var(--white);
+      clip-path: ellipse(55% 60% at 50% 100%);
+    }
+
+    /* ── Bento Grid ──────────────────────────────── */
+    .bento {
+      background: var(--white);
+      padding: 80px 0;
+    }
+    .bento-header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    .bento-header h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .bento-header p {
+      font-size: 18px;
+      color: var(--text-light);
+    }
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: auto auto;
+      gap: 20px;
+    }
+    .bento-card {
+      background: var(--sand);
+      border-radius: 24px;
+      padding: 32px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .bento-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+    }
+    .bento-card.large {
+      grid-column: span 2;
+    }
+    .bento-card.tall {
+      grid-row: span 2;
+    }
+    .bento-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .bento-icon.coral { background: rgba(240, 124, 108, 0.15); }
+    .bento-icon.ocean { background: rgba(78, 205, 196, 0.15); }
+    .bento-icon.golden { background: rgba(245, 197, 99, 0.15); }
+    .bento-card h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .bento-card p {
+      font-size: 15px;
+      color: var(--text-light);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .bento-grid { grid-template-columns: 1fr 1fr; }
+      .bento-card.large { grid-column: span 2; }
+      .bento-card.tall { grid-row: span 1; }
+    }
+    @media (max-width: 600px) {
+      .bento-grid { grid-template-columns: 1fr; }
+      .bento-card.large { grid-column: span 1; }
+    }
+
+    /* ── Code Example ────────────────────────────── */
+    .code-section {
+      background: var(--sand);
+      padding: 100px 0;
+    }
+    .code-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 60px;
+      align-items: center;
+    }
+    .code-content h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .code-content p {
+      font-size: 18px;
+      color: var(--text-light);
+      margin-bottom: 32px;
+    }
+    .code-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .code-step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--ocean);
+      color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .step-text h4 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .step-text p {
+      font-size: 14px;
+      color: var(--text-light);
+      margin: 0;
+    }
+    .terminal {
+      background: #1a1d21;
+      border-radius: 16px;
       overflow: hidden;
-      text-align: left;
-      box-shadow: 0 25px 80px rgba(0,0,0,0.5), 0 0 40px var(--accent-glow);
+      box-shadow: 0 25px 80px rgba(0,0,0,0.15);
     }
     .terminal-header {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 20px;
-      background: rgba(255,255,255,0.03);
-      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      background: #252a30;
     }
     .terminal-dot {
       width: 12px; height: 12px;
       border-radius: 50%;
     }
-    .terminal-dot.red { background: #ff5f57; }
-    .terminal-dot.yellow { background: #ffbd2e; }
-    .terminal-dot.green { background: #28c840; }
-    .terminal-title {
-      margin-left: 8px;
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: 'JetBrains Mono', monospace;
-    }
+    .terminal-dot.r { background: #ff5f57; }
+    .terminal-dot.y { background: #ffbd2e; }
+    .terminal-dot.g { background: #28c840; }
     .terminal-body {
-      padding: 20px 24px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13.5px;
+      padding: 24px;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
       line-height: 1.8;
       overflow-x: auto;
     }
-    .terminal-body .comment { color: #5b6196; }
-    .terminal-body .prompt { color: var(--accent); }
-    .terminal-body .cmd { color: var(--text-primary); }
-    .terminal-body .string { color: #22c55e; }
-    .terminal-body .key { color: #60a5fa; }
-    .terminal-body .response { color: #8b92c4; }
+    .terminal-body .comment { color: #6b7280; }
+    .terminal-body .prompt { color: var(--coral); }
+    .terminal-body .cmd { color: #e5e7eb; }
+    .terminal-body .string { color: var(--ocean); }
+    .terminal-body .key { color: var(--golden); }
+    .terminal-body .response { color: #9ca3af; }
 
-    /* ── Trusted By / Stats ────────────────────── */
-    .stats {
-      padding: 60px 0;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      background: rgba(10, 14, 39, 0.5);
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 40px;
-      text-align: center;
-    }
-    .stat-item h3 {
-      font-size: 40px;
-      font-weight: 800;
-      color: var(--text-primary);
-      margin-bottom: 4px;
-    }
-    .stat-item p {
-      font-size: 14px;
-      color: var(--text-muted);
-      font-weight: 500;
+    @media (max-width: 900px) {
+      .code-layout { grid-template-columns: 1fr; }
     }
 
-    /* ── Features ───────────────────────────────── */
-    .features { background: var(--bg-deep); }
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-      margin-top: 60px;
+    /* ── API Reference ───────────────────────────── */
+    .api-section {
+      background: var(--white);
+      padding: 100px 0;
     }
-    .feature-card {
-      padding: 36px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      transition: all 0.3s ease;
-      position: relative;
+    .api-section .bento-header { margin-bottom: 40px; }
+    .api-table {
+      background: var(--sand);
+      border-radius: 16px;
       overflow: hidden;
     }
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
-    .feature-card:hover {
-      border-color: rgba(249, 115, 22, 0.2);
-      background: var(--bg-card-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
-    }
-    .feature-card:hover::before { opacity: 1; }
-    .feature-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: var(--accent-glow);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      margin-bottom: 20px;
-    }
-    .feature-card h3 {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 10px;
-    }
-    .feature-card p {
-      font-size: 15px;
-      color: var(--text-secondary);
-      line-height: 1.7;
-    }
-
-    /* ── How It Works ──────────────────────────── */
-    .how-it-works {
-      background: var(--bg-base);
-    }
-    .steps {
+    .api-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 32px;
-      margin-top: 60px;
-      position: relative;
-    }
-    .steps::before {
-      content: '';
-      position: absolute;
-      top: 48px;
-      left: 16.66%;
-      right: 16.66%;
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent), var(--border-light), var(--accent));
-      opacity: 0.3;
-    }
-    .step {
-      text-align: center;
-      position: relative;
-    }
-    .step-number {
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: var(--bg-card);
-      border: 2px solid var(--accent);
-      display: flex;
+      grid-template-columns: 80px 200px 1fr;
+      gap: 20px;
+      padding: 16px 24px;
       align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      font-weight: 800;
-      color: var(--accent);
-      margin: 0 auto 24px;
-      position: relative;
-      z-index: 1;
-      box-shadow: 0 0 20px var(--accent-glow);
+      border-bottom: 1px solid var(--sand-dark);
+      transition: background 0.15s ease;
     }
-    .step h3 {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 10px;
-    }
-    .step p {
-      font-size: 15px;
-      color: var(--text-secondary);
-      line-height: 1.7;
-    }
-    .step-code {
-      margin-top: 20px;
-      background: var(--code-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      font-family: 'JetBrains Mono', monospace;
+    .api-row:last-child { border-bottom: none; }
+    .api-row:hover { background: var(--sand-dark); }
+    .api-method {
+      font-family: 'DM Mono', monospace;
       font-size: 12px;
-      text-align: left;
-      line-height: 1.7;
-      overflow-x: auto;
-    }
-
-    /* ── API Docs ──────────────────────────────── */
-    .api-docs {
-      background: var(--bg-deep);
-    }
-    .api-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 40px;
-      margin-top: 60px;
-      align-items: start;
-    }
-    .api-endpoints {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .endpoint {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 20px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .endpoint:hover, .endpoint.active {
-      border-color: var(--accent);
-      background: var(--bg-card-hover);
-    }
-    .endpoint-method {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 8px;
-      border-radius: 4px;
-      min-width: 60px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
       text-align: center;
     }
-    .method-get { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .method-post { background: rgba(59,130,246,0.15); color: #60a5fa; }
-    .method-patch { background: rgba(251,191,36,0.15); color: #fbbf24; }
-    .method-delete { background: rgba(239,68,68,0.15); color: #ef4444; }
-    .endpoint-path {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      color: var(--text-primary);
+    .api-method.get { background: rgba(78,205,196,0.2); color: var(--ocean-deep); }
+    .api-method.post { background: rgba(240,124,108,0.2); color: var(--coral); }
+    .api-method.put { background: rgba(245,197,99,0.2); color: #c9a033; }
+    .api-method.patch { background: rgba(245,197,99,0.2); color: #c9a033; }
+    .api-method.delete { background: rgba(239,68,68,0.2); color: #dc2626; }
+    .api-path {
+      font-family: 'DM Mono', monospace;
+      font-size: 14px;
+      color: var(--text);
     }
-    .endpoint-desc {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-left: auto;
-    }
-    .api-example {
-      position: sticky;
-      top: 100px;
-    }
-    .api-example .hero-terminal {
-      max-width: 100%;
+    .api-desc {
+      font-size: 14px;
+      color: var(--text-light);
     }
 
-    /* ── Skill / Integration ───────────────────── */
-    .integration {
-      background: var(--bg-base);
+    @media (max-width: 700px) {
+      .api-row { grid-template-columns: 70px 1fr; }
+      .api-desc { display: none; }
     }
-    .integration-grid {
+
+    /* ── CLI Section ─────────────────────────────── */
+    .cli-section {
+      background: linear-gradient(135deg, var(--ocean) 0%, var(--ocean-deep) 100%);
+      padding: 100px 0;
+      color: var(--white);
+    }
+    .cli-layout {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 60px;
-      margin-top: 60px;
       align-items: center;
     }
-    .integration-content h3 {
-      font-size: 24px;
+    .cli-content h2 {
+      font-size: 36px;
       font-weight: 700;
-      color: var(--text-primary);
       margin-bottom: 16px;
     }
-    .integration-content p {
-      color: var(--text-secondary);
-      margin-bottom: 24px;
+    .cli-content p {
+      font-size: 18px;
+      opacity: 0.9;
+      margin-bottom: 32px;
     }
-    .integration-features {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .integration-features li {
-      display: flex;
-      align-items: flex-start;
+    .cli-cmd {
+      display: inline-flex;
+      align-items: center;
       gap: 12px;
+      background: rgba(255,255,255,0.15);
+      padding: 14px 24px;
+      border-radius: 50px;
+      font-family: 'DM Mono', monospace;
       font-size: 15px;
-      color: var(--text-secondary);
     }
-    .integration-features li .check {
-      color: var(--accent);
-      font-size: 18px;
-      line-height: 1.5;
-      flex-shrink: 0;
+    .cli-cmd span { opacity: 0.7; }
+    .cli-terminal {
+      background: #1a1d21;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.25);
+    }
+    .cli-terminal .terminal-body {
+      font-size: 12px;
     }
 
-    /* ── CTA ────────────────────────────────────── */
-    .cta {
+    @media (max-width: 900px) {
+      .cli-layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── CTA Section ─────────────────────────────── */
+    .cta-section {
+      background: var(--sand);
+      padding: 120px 0;
       text-align: center;
-      padding: 140px 0;
-      position: relative;
     }
-    .cta::before {
-      content: '';
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-      pointer-events: none;
+    .cta-section h2 {
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 700;
+      margin-bottom: 16px;
     }
-    .cta h2 {
-      font-size: clamp(36px, 5vw, 56px);
-      font-weight: 800;
-      color: var(--text-primary);
-      margin-bottom: 20px;
-      position: relative;
-    }
-    .cta p {
+    .cta-section p {
       font-size: 18px;
-      color: var(--text-secondary);
+      color: var(--text-light);
       margin-bottom: 40px;
-      max-width: 500px;
-      margin-left: auto;
-      margin-right: auto;
-      position: relative;
     }
-    .cta .hero-actions { position: relative; }
 
-    /* ── Footer ─────────────────────────────────── */
+    /* ── Footer ──────────────────────────────────── */
     footer {
-      position: relative;
-      z-index: 1;
-      border-top: 1px solid var(--border);
+      background: var(--white);
       padding: 60px 0 40px;
-      background: var(--bg-deep);
+      border-top: 1px solid var(--sand-dark);
     }
     .footer-grid {
       display: grid;
       grid-template-columns: 2fr 1fr 1fr 1fr;
-      gap: 48px;
-      margin-bottom: 48px;
+      gap: 40px;
+      margin-bottom: 40px;
     }
     .footer-brand p {
       font-size: 14px;
-      color: var(--text-muted);
+      color: var(--text-light);
       margin-top: 12px;
       max-width: 280px;
-      line-height: 1.7;
     }
     .footer-col h4 {
       font-size: 13px;
-      font-weight: 700;
-      color: var(--text-primary);
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.05em;
+      color: var(--text);
       margin-bottom: 16px;
     }
     .footer-col ul {
@@ -650,400 +510,293 @@
     }
     .footer-col a {
       font-size: 14px;
-      color: var(--text-muted);
+      color: var(--text-light);
       transition: color 0.2s;
     }
-    .footer-col a:hover { color: var(--accent); }
+    .footer-col a:hover { color: var(--ocean); }
     .footer-bottom {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-top: 32px;
-      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      border-top: 1px solid var(--sand-dark);
       font-size: 13px;
       color: var(--text-muted);
     }
 
-    /* ── Reveal Animations ─────────────────────── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(30px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
+    @media (max-width: 768px) {
+      .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
     }
-    .reveal.visible {
+    @media (max-width: 500px) {
+      .footer-grid { grid-template-columns: 1fr; }
+      .footer-bottom { flex-direction: column; gap: 12px; }
+    }
+
+    /* ── Animations ──────────────────────────────── */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .fade-in.visible {
       opacity: 1;
       transform: translateY(0);
-    }
-    .reveal-delay-1 { transition-delay: 0.1s; }
-    .reveal-delay-2 { transition-delay: 0.2s; }
-    .reveal-delay-3 { transition-delay: 0.3s; }
-    .reveal-delay-4 { transition-delay: 0.4s; }
-
-    /* ── Code Copy Button ──────────────────────── */
-    .code-wrapper {
-      position: relative;
-    }
-    .copy-btn {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      padding: 6px 12px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid var(--border-light);
-      border-radius: 6px;
-      color: var(--text-muted);
-      font-size: 12px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all 0.2s;
-      z-index: 2;
-    }
-    .copy-btn:hover {
-      background: rgba(255,255,255,0.1);
-      color: var(--text-primary);
-    }
-
-    /* ── Responsive ─────────────────────────────── */
-    @media (max-width: 968px) {
-      .features-grid { grid-template-columns: 1fr; }
-      .api-grid { grid-template-columns: 1fr; }
-      .integration-grid { grid-template-columns: 1fr; }
-      .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
-      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 32px; }
-      .steps { grid-template-columns: 1fr; gap: 48px; }
-      .steps::before { display: none; }
-      .endpoint-desc { display: none; }
-    }
-    @media (max-width: 640px) {
-      section { padding: 80px 0; }
-      .hero { padding-top: 120px; padding-bottom: 80px; }
-      .nav-links { display: none; }
-      .mobile-toggle { display: block; }
-      .nav-links.open {
-        display: flex;
-        flex-direction: column;
-        position: absolute;
-        top: 100%;
-        left: 0; right: 0;
-        background: rgba(6,9,24,0.95);
-        backdrop-filter: blur(20px);
-        padding: 24px;
-        gap: 16px;
-        border-bottom: 1px solid var(--border);
-      }
-      .footer-grid { grid-template-columns: 1fr; }
-      .stats-grid { grid-template-columns: 1fr 1fr; }
-      .hero-terminal { margin: 0 -12px; border-radius: 12px; }
-      .footer-bottom { flex-direction: column; gap: 12px; text-align: center; }
     }
   </style>
 </head>
 <body>
 
-<!-- Background Effects -->
-<div class="bg-glow"></div>
-<div class="grid-bg"></div>
-
 <!-- Navigation -->
 <nav id="nav">
   <div class="container">
     <a href="/" class="nav-brand">
-      <img src="/logo.png" alt="ClawMail" width="36" height="36">
-      <span>Claw<span style="color: var(--accent)">Mail</span></span>
+      <img src="/logo.png" alt="ShellMail">
+      <span>shellmail</span>
     </a>
-    <ul class="nav-links" id="navLinks">
+    <ul class="nav-links">
       <li><a href="#features">Features</a></li>
-      <li><a href="#how-it-works">How It Works</a></li>
-      <li><a href="#api-docs">API</a></li>
-      <li><a href="#integration">Integration</a></li>
-      <li><a href="#api-docs" class="btn btn-primary nav-cta">Get Started</a></li>
+      <li><a href="#api">API</a></li>
+      <li><a href="#cli">CLI</a></li>
+      <li><a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank">ClawHub</a></li>
+      <li><a href="https://github.com/aaronbatchelder/shellmail" target="_blank">GitHub</a></li>
+      <li><a href="#cli" class="btn btn-primary">Get Started</a></li>
     </ul>
-    <button class="mobile-toggle" id="mobileToggle" aria-label="Toggle menu">☰</button>
   </div>
 </nav>
 
-<!-- Hero Section -->
+<!-- Hero -->
 <section class="hero">
   <div class="container">
-    <div class="reveal">
+    <img src="/logo.png" alt="ShellMail" class="hero-logo">
+    <h1>Email for <span>AI agents</span></h1>
+    <p>Give your OpenClaw agent an inbox in under 60 seconds.<br>No servers. No config. Just email that works.</p>
+    <div class="hero-actions">
+      <a href="#cli" class="btn btn-primary">Get Started Free</a>
+      <a href="#features" class="btn btn-secondary">See Features</a>
     </div>
-    <img src="/logo.png" alt="ClawMail Logo" class="hero-logo reveal reveal-delay-1" width="100" height="100">
-    <h1 class="reveal reveal-delay-1">Inboxes for <span class="accent">agents</span>, not&nbsp;humans</h1>
-    <p class="reveal reveal-delay-2">Give your AI agent a real email address. Receive, read, and manage inbound email through a simple REST API. No servers, no SMTP config — just&nbsp;curl.</p>
-    <div class="hero-actions reveal reveal-delay-3">
-      <a href="#api-docs" class="btn btn-primary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        Get Started Free
-      </a>
-      <a href="#how-it-works" class="btn btn-secondary">See How It Works</a>
+  </div>
+</section>
+
+<!-- Wave -->
+<div class="wave"></div>
+
+<!-- Bento Features -->
+<section class="bento" id="features">
+  <div class="container">
+    <div class="bento-header fade-in">
+      <h2>Everything your agent needs</h2>
+      <p>One curl command. One token. Zero mail servers. Your agent has email in under a minute.</p>
     </div>
-    <div class="hero-terminal reveal reveal-delay-4">
-      <div class="terminal-header">
-        <span class="terminal-dot red"></span>
-        <span class="terminal-dot yellow"></span>
-        <span class="terminal-dot green"></span>
-        <span class="terminal-title">bash — clawmail</span>
+    <div class="bento-grid">
+      <div class="bento-card large fade-in">
+        <div class="bento-icon coral">📧</div>
+        <h3>Instant Email Addresses</h3>
+        <p>Create addresses on-demand at <code>anything@shellmail.ai</code>. Each gets its own inbox with token auth. Spin up disposable addresses or keep persistent ones for your agents.</p>
       </div>
-      <div class="terminal-body">
-        <div><span class="comment"># Create an email address for your agent</span></div>
-        <div><span class="prompt">$</span> <span class="cmd">curl -X POST https://clawmail.dev/api/addresses \</span></div>
-        <div><span class="cmd">  -H <span class="string">"Content-Type: application/json"</span> \</span></div>
-        <div><span class="cmd">  -d <span class="string">'{"local":"my-agent","recovery_email":"you@email.com"}'</span></span></div>
-        <br>
-        <div><span class="response">{</span></div>
-        <div><span class="response">  <span class="key">"address"</span>: <span class="string">"my-agent@clawmail.dev"</span>,</span></div>
-        <div><span class="response">  <span class="key">"token"</span>:   <span class="string">"cm_a1b2c3d4e5f6..."</span></span></div>
-        <div><span class="response">}</span></div>
+      <div class="bento-card fade-in">
+        <div class="bento-icon ocean">🔑</div>
+        <h3>Auto OTP Extraction</h3>
+        <p>Verification codes extracted automatically. Call one endpoint, get the code. Supports long-polling to wait for arrival.</p>
+      </div>
+      <div class="bento-card tall fade-in">
+        <div class="bento-icon golden">⚡</div>
+        <h3>Webhooks</h3>
+        <p>Get notified instantly when mail arrives. We POST to your URL with HMAC signatures. No polling needed.</p>
+        <div style="margin-top: 20px; padding: 16px; background: var(--sand-dark); border-radius: 12px; font-family: 'DM Mono', monospace; font-size: 12px;">
+          <div style="color: var(--text-muted);">POST /your-webhook</div>
+          <div style="color: var(--text-light); margin-top: 8px;">{</div>
+          <div style="color: var(--golden); margin-left: 12px;">"event": <span style="color: var(--ocean);">"email.received"</span>,</div>
+          <div style="color: var(--golden); margin-left: 12px;">"otp_code": <span style="color: var(--ocean);">"847293"</span></div>
+          <div style="color: var(--text-light);">}</div>
+        </div>
+      </div>
+      <div class="bento-card fade-in">
+        <div class="bento-icon ocean">🔍</div>
+        <h3>Search & Filter</h3>
+        <p>Find emails by sender, subject, or OTP presence. Pagination built in.</p>
+      </div>
+      <div class="bento-card fade-in">
+        <div class="bento-icon coral">🌍</div>
+        <h3>Edge-Fast</h3>
+        <p>Runs on Cloudflare's global network. Sub-50ms responses worldwide.</p>
+      </div>
+      <div class="bento-card fade-in">
+        <div class="bento-icon golden">🗑️</div>
+        <h3>Ephemeral Storage</h3>
+        <p>Messages auto-delete after 7 days. No data hoarding, no compliance headaches. Your agent processes in real-time, then it's gone.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Stats -->
-<section class="stats">
+<!-- Code Section -->
+<section class="code-section" id="how">
   <div class="container">
-    <div class="stats-grid">
-      <div class="stat-item reveal">
-        <h3>REST</h3>
-        <p>Simple JSON API</p>
-      </div>
-      <div class="stat-item reveal reveal-delay-1">
-        <h3>&lt;50ms</h3>
-        <p>Edge Response Time</p>
-      </div>
-      <div class="stat-item reveal reveal-delay-2">
-        <h3>0</h3>
-        <p>Servers to Manage</p>
-      </div>
-      <div class="stat-item reveal reveal-delay-3">
-        <h3>∞</h3>
-        <p>Inbound Addresses</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Features -->
-<section class="features" id="features">
-  <div class="container">
-    <div class="reveal" style="text-align:center;">
-      <p class="section-label">Features</p>
-      <h2 class="section-title">Everything your agent needs<br>to handle email</h2>
-      <p class="section-subtitle" style="margin: 0 auto;">Built for the agentic era. No SMTP, no IMAP, no mail servers. Just a clean API your agent can call.</p>
-    </div>
-    <div class="features-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon">📧</div>
-        <h3>Custom Email Addresses</h3>
-        <p>Create addresses on-demand at <code>your-agent@clawmail.dev</code>. Each address gets its own inbox, managed independently through token auth. Spin up disposable addresses or keep persistent ones.</p>
-      </div>
-      <div class="feature-card reveal reveal-delay-1">
-        <div class="feature-icon">🔐</div>
-        <h3>Token Authentication</h3>
-        <p>Every address gets a unique bearer token on creation. No OAuth flows, no API keys to manage. Just pass the token in the Authorization header. Lost your token? Recovery is emailed securely — never exposed via API. Rate limited to prevent abuse.</p>
-      </div>
-      <div class="feature-card reveal reveal-delay-2">
-        <div class="feature-icon">⚡</div>
-        <h3>Clean REST API</h3>
-        <p>Standard JSON over HTTP. List messages, read full email bodies, mark as read, archive, delete — everything you'd expect. Pagination, filtering by unread status, and full text/HTML body access.</p>
-      </div>
-      <div class="feature-card reveal reveal-delay-3">
-        <div class="feature-icon">🌍</div>
-        <h3>Zero Infrastructure</h3>
-        <p>Runs on Cloudflare's global edge. No servers to provision, no DNS to configure, no TLS certificates to manage. Your agent makes HTTP calls; we handle everything else at the edge.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- How It Works -->
-<section class="how-it-works" id="how-it-works">
-  <div class="container">
-    <div class="reveal" style="text-align:center;">
-      <p class="section-label">How It Works</p>
-      <h2 class="section-title">Three steps to agent email</h2>
-      <p class="section-subtitle" style="margin: 0 auto;">From zero to receiving email in under a minute. No config files, no DNS records.</p>
-    </div>
-    <div class="steps">
-      <div class="step reveal">
-        <div class="step-number">1</div>
-        <h3>Create an Address</h3>
-        <p>Pick a local part and provide a recovery email. You'll get back a <code>@clawmail.dev</code> address and a bearer token.</p>
-        <div class="step-code">
-          <span style="color:#5b6196">POST</span> <span style="color:var(--text-primary)">/api/addresses</span><br>
-          <span style="color:#60a5fa">{</span><br>
-          &nbsp;&nbsp;<span style="color:#60a5fa">"local"</span>: <span style="color:#22c55e">"my-agent"</span>,<br>
-          &nbsp;&nbsp;<span style="color:#60a5fa">"recovery_email"</span>: <span style="color:#22c55e">"me@email.com"</span><br>
-          <span style="color:#60a5fa">}</span>
-        </div>
-      </div>
-      <div class="step reveal reveal-delay-1">
-        <div class="step-number">2</div>
-        <h3>Receive Email</h3>
-        <p>Anyone can now send email to your agent's address. Inbound messages are automatically parsed and stored, ready for retrieval.</p>
-        <div class="step-code">
-          <span style="color:#5b6196">To:</span> <span style="color:#22c55e">my-agent@clawmail.dev</span><br>
-          <span style="color:#5b6196">From:</span> <span style="color:var(--text-secondary)">alice@example.com</span><br>
-          <span style="color:#5b6196">Subject:</span> <span style="color:var(--text-primary)">Meeting tomorrow</span><br>
-          <br>
-          <span style="color:var(--text-secondary)">Hey, just confirming...</span>
-        </div>
-      </div>
-      <div class="step reveal reveal-delay-2">
-        <div class="step-number">3</div>
-        <h3>Poll from Your Agent</h3>
-        <p>Call the API from your agent, cron job, or automation. Get structured JSON with sender, subject, body text, and HTML.</p>
-        <div class="step-code">
-          <span style="color:#5b6196">GET</span> <span style="color:var(--text-primary)">/api/mail?unread=true</span><br>
-          <span style="color:#5b6196">Authorization:</span> <span style="color:#22c55e">Bearer cm_...</span><br>
-          <br>
-          <span style="color:#60a5fa">→</span> <span style="color:var(--text-secondary)">{ emails: [...], unread_count: 3 }</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- API Documentation -->
-<section class="api-docs" id="api-docs">
-  <div class="container">
-    <div class="reveal">
-      <p class="section-label">API Reference</p>
-      <h2 class="section-title">Simple, predictable endpoints</h2>
-      <p class="section-subtitle">Standard REST. JSON in, JSON out. Authenticate with your bearer token.</p>
-    </div>
-    <div class="api-grid">
-      <div class="api-endpoints reveal">
-        <div class="endpoint active" data-example="create">
-          <span class="endpoint-method method-post">POST</span>
-          <span class="endpoint-path">/api/addresses</span>
-          <span class="endpoint-desc">Create address</span>
-        </div>
-        <div class="endpoint" data-example="list">
-          <span class="endpoint-method method-get">GET</span>
-          <span class="endpoint-path">/api/mail</span>
-          <span class="endpoint-desc">List emails</span>
-        </div>
-        <div class="endpoint" data-example="read">
-          <span class="endpoint-method method-get">GET</span>
-          <span class="endpoint-path">/api/mail/:id</span>
-          <span class="endpoint-desc">Read email</span>
-        </div>
-        <div class="endpoint" data-example="update">
-          <span class="endpoint-method method-patch">PATCH</span>
-          <span class="endpoint-path">/api/mail/:id</span>
-          <span class="endpoint-desc">Mark read/archive</span>
-        </div>
-        <div class="endpoint" data-example="delete">
-          <span class="endpoint-method method-delete">DELETE</span>
-          <span class="endpoint-path">/api/mail/:id</span>
-          <span class="endpoint-desc">Delete email</span>
-        </div>
-        <div class="endpoint" data-example="recover">
-          <span class="endpoint-method method-post">POST</span>
-          <span class="endpoint-path">/api/recover</span>
-          <span class="endpoint-desc">Recover token</span>
-        </div>
-        <div class="endpoint" data-example="nuke">
-          <span class="endpoint-method method-delete">DELETE</span>
-          <span class="endpoint-path">/api/addresses/me</span>
-          <span class="endpoint-desc">Delete address</span>
-        </div>
-      </div>
-      <div class="api-example reveal reveal-delay-1">
-        <div class="hero-terminal code-wrapper" id="apiExampleBox">
-          <div class="terminal-header">
-            <span class="terminal-dot red"></span>
-            <span class="terminal-dot yellow"></span>
-            <span class="terminal-dot green"></span>
-            <span class="terminal-title" id="exampleTitle">create address</span>
-          </div>
-          <button class="copy-btn" onclick="copyExample()">Copy</button>
-          <div class="terminal-body" id="apiExampleBody">
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- OpenClaw Integration -->
-<section class="integration" id="integration">
-  <div class="container">
-    <div class="integration-grid">
-      <div class="integration-content reveal">
-        <p class="section-label">Integration</p>
-        <h2 class="section-title">First-class OpenClaw skill</h2>
-        <p>ClawMail ships with a ready-to-use <a href="https://github.com/ngmaloney/clawmail" style="color:var(--accent);border-bottom:1px solid var(--accent)">OpenClaw skill</a> that gives your AI agent full email capabilities — inbox checking, reading, archiving, and more — with zero additional code.</p>
-        <ul class="integration-features">
-          <li><span class="check">✦</span> Drop-in skill installs in seconds</li>
-          <li><span class="check">✦</span> Natural language triggers — "check my email"</li>
-          <li><span class="check">✦</span> Automatic inbox polling on heartbeats or cron</li>
-          <li><span class="check">✦</span> Create new addresses via conversation</li>
-          <li><span class="check">✦</span> Summarize and act on inbound messages</li>
-        </ul>
-      </div>
-      <div class="reveal reveal-delay-1">
-        <div class="hero-terminal">
-          <div class="terminal-header">
-            <span class="terminal-dot red"></span>
-            <span class="terminal-dot yellow"></span>
-            <span class="terminal-dot green"></span>
-            <span class="terminal-title">openclaw.json</span>
-          </div>
-          <div class="terminal-body">
-            <div><span style="color:#60a5fa">{</span></div>
-            <div>&nbsp;&nbsp;<span class="key">"skills"</span>: <span style="color:#60a5fa">{</span></div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"entries"</span>: <span style="color:#60a5fa">{</span></div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"clawmail"</span>: <span style="color:#60a5fa">{</span></div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"apiUrl"</span>: <span class="string">"https://clawmail.dev"</span>,</div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"token"</span>: <span class="string">"cm_your_token_here"</span></div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#60a5fa">}</span></div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#60a5fa">}</span></div>
-            <div>&nbsp;&nbsp;<span style="color:#60a5fa">}</span></div>
-            <div><span style="color:#60a5fa">}</span></div>
-          </div>
-        </div>
-        <div style="margin-top:20px;">
-          <div class="hero-terminal">
-            <div class="terminal-header">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-              <span class="terminal-title">agent conversation</span>
+    <div class="code-layout">
+      <div class="code-content fade-in">
+        <h2>60 seconds to inbox</h2>
+        <p>One POST request creates your address. That's it. No SMTP, no IMAP, no DNS records, no config files. Just works.</p>
+        <div class="code-steps">
+          <div class="code-step">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <h4>Create an address</h4>
+              <p>Pick a name, get a token. Done in one request.</p>
             </div>
-            <div class="terminal-body" style="font-family: 'Inter', sans-serif; font-size: 14px;">
-              <div style="color:var(--text-muted); margin-bottom: 8px;">👤 You</div>
-              <div style="color:var(--text-primary); margin-bottom: 16px;">Check my email</div>
-              <div style="color:var(--text-muted); margin-bottom: 8px;">🤖 Agent</div>
-              <div style="color:var(--text-secondary);">You have <span style="color:var(--accent);font-weight:600;">3 unread messages</span>:</div>
-              <div style="color:var(--text-secondary); margin-top:8px;">
-                <span style="color:var(--text-muted);">1.</span> Alice — Meeting tomorrow at 2pm<br>
-                <span style="color:var(--text-muted);">2.</span> GitHub — New issue on clawmail<br>
-                <span style="color:var(--text-muted);">3.</span> Stripe — Payment received
-              </div>
+          </div>
+          <div class="code-step">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <h4>Receive email</h4>
+              <p>Anyone can now send to your-agent@shellmail.ai</p>
+            </div>
+          </div>
+          <div class="code-step">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <h4>Read via API</h4>
+              <p>GET /api/mail returns structured JSON with body, OTP, everything.</p>
             </div>
           </div>
         </div>
       </div>
+      <div class="terminal fade-in">
+        <div class="terminal-header">
+          <span class="terminal-dot r"></span>
+          <span class="terminal-dot y"></span>
+          <span class="terminal-dot g"></span>
+        </div>
+        <div class="terminal-body">
+<span class="comment"># Create an address</span>
+<span class="prompt">$</span> <span class="cmd">curl -X POST https://shellmail.ai/api/addresses \</span>
+<span class="cmd">    -d <span class="string">'{"local":"my-agent","recovery_email":"you@email.com"}'</span></span>
+
+<span class="response">{
+  <span class="key">"address"</span>: <span class="string">"my-agent@shellmail.ai"</span>,
+  <span class="key">"token"</span>: <span class="string">"sm_a1b2c3d4..."</span>
+}</span>
+
+<span class="comment"># Get latest OTP (with 30s wait)</span>
+<span class="prompt">$</span> <span class="cmd">curl "https://shellmail.ai/api/mail/otp?timeout=30000" \</span>
+<span class="cmd">    -H <span class="string">"Authorization: Bearer sm_a1b2c3d4..."</span></span>
+
+<span class="response">{
+  <span class="key">"found"</span>: true,
+  <span class="key">"code"</span>: <span class="string">"847293"</span>,
+  <span class="key">"from"</span>: <span class="string">"noreply@github.com"</span>
+}</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- CTA Section -->
-<section class="cta">
+<!-- API Reference -->
+<section class="api-section" id="api">
   <div class="container">
-    <h2 class="reveal">Ready to give your agent<br>an <span class="gradient-text">inbox</span>?</h2>
-    <p class="reveal reveal-delay-1">Free during beta. Create your first address in seconds.</p>
-    <div class="hero-actions reveal reveal-delay-2">
-      <a href="#api-docs" class="btn btn-primary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        Create Your Address
-      </a>
-      <a href="https://github.com/ngmaloney/clawmail" class="btn btn-secondary" target="_blank">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-        View on GitHub
-      </a>
+    <div class="bento-header fade-in">
+      <h2>Simple REST API</h2>
+      <p>JSON in, JSON out. Bearer token auth.</p>
+    </div>
+    <div class="api-table fade-in">
+      <div class="api-row">
+        <span class="api-method post">POST</span>
+        <span class="api-path">/api/addresses</span>
+        <span class="api-desc">Create a new email address</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method get">GET</span>
+        <span class="api-path">/api/mail</span>
+        <span class="api-desc">List emails in inbox</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method get">GET</span>
+        <span class="api-path">/api/mail/:id</span>
+        <span class="api-desc">Read full email with body</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method get">GET</span>
+        <span class="api-path">/api/mail/otp</span>
+        <span class="api-desc">Get latest OTP code (supports long-poll)</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method get">GET</span>
+        <span class="api-path">/api/mail/search</span>
+        <span class="api-desc">Search by query, sender, or OTP presence</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method patch">PATCH</span>
+        <span class="api-path">/api/mail/:id</span>
+        <span class="api-desc">Mark as read or archive</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method delete">DELETE</span>
+        <span class="api-path">/api/mail/:id</span>
+        <span class="api-desc">Delete an email</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method put">PUT</span>
+        <span class="api-path">/api/webhook</span>
+        <span class="api-desc">Configure webhook URL</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method post">POST</span>
+        <span class="api-path">/api/recover</span>
+        <span class="api-desc">Recover token via email</span>
+      </div>
+      <div class="api-row">
+        <span class="api-method delete">DELETE</span>
+        <span class="api-path">/api/addresses/me</span>
+        <span class="api-desc">Delete address and all mail</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CLI Section -->
+<section class="cli-section" id="cli">
+  <div class="container">
+    <div class="cli-layout">
+      <div class="cli-content fade-in">
+        <h2>Built for OpenClaw</h2>
+        <p>First-class skill on <a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank" style="color: var(--white); text-decoration: underline;">ClawHub</a>. Install in one command, then your agent can check email conversationally.</p>
+        <div class="cli-cmd" style="margin-bottom: 12px;">
+          <span>$</span> clawhub install shellmail
+        </div>
+        <div class="cli-cmd">
+          <span>$</span> npx shellmail setup
+        </div>
+      </div>
+      <div class="cli-terminal fade-in">
+        <div class="terminal-header">
+          <span class="terminal-dot r"></span>
+          <span class="terminal-dot y"></span>
+          <span class="terminal-dot g"></span>
+        </div>
+        <div class="terminal-body">
+<span class="prompt">$</span> <span class="cmd">shellmail inbox</span>
+<span class="response">
+📬 my-agent@shellmail.ai (2 unread)
+
+● GitHub      Your verification code is 847293
+● Stripe      Payment received for $49.00
+</span>
+<span class="prompt">$</span> <span class="cmd">shellmail otp</span>
+<span class="response">✔ OTP found: <span style="color: var(--golden);">847293</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container">
+    <h2 class="fade-in">Your agent deserves an inbox</h2>
+    <p class="fade-in">Free to start. Set up in under a minute. No credit card, no servers, no stress.</p>
+    <div class="hero-actions fade-in">
+      <a href="#cli" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/aaronbatchelder/shellmail" class="btn btn-secondary" target="_blank">View on GitHub</a>
     </div>
   </div>
 </section>
@@ -1054,213 +807,51 @@
     <div class="footer-grid">
       <div class="footer-brand">
         <a href="/" class="nav-brand">
-          <img src="/logo.png" alt="ClawMail" width="32" height="32">
-          <span>Claw<span style="color: var(--accent)">Mail</span></span>
+          <img src="/logo.png" alt="ShellMail" style="width: 28px; height: 28px; border-radius: 6px;">
+          <span>shellmail</span>
         </a>
-        <p>Email infrastructure for AI agents. Built on Cloudflare Workers for global edge performance.</p>
+        <p>Email infrastructure for AI agents. Built on Cloudflare Workers.</p>
       </div>
       <div class="footer-col">
         <h4>Product</h4>
         <ul>
           <li><a href="#features">Features</a></li>
-          <li><a href="#api-docs">API Docs</a></li>
-          <li><a href="#how-it-works">How It Works</a></li>
+          <li><a href="#api">API</a></li>
+          <li><a href="#cli">CLI</a></li>
           <li><a href="/health">Status</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Developers</h4>
         <ul>
-          <li><a href="#api-docs">REST API</a></li>
-          <li><a href="#integration">OpenClaw Skill</a></li>
-          <li><a href="https://github.com/ngmaloney/clawmail" target="_blank">GitHub</a></li>
+          <li><a href="#api">Documentation</a></li>
+          <li><a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank">ClawHub</a></li>
+          <li><a href="https://github.com/aaronbatchelder/shellmail" target="_blank">GitHub</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Legal</h4>
         <ul>
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Service</a></li>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">Terms</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; 2025 ClawMail. All rights reserved.</span>
-      <span>Built with 🦀 on Cloudflare Workers</span>
+      <span>&copy; 2026 ShellMail</span>
+      <span>Built with ☀️ on Cloudflare</span>
     </div>
   </div>
 </footer>
 
 <script>
-  // ── API Examples Data ────────────────────────
-  const examples = {
-    create: {
-      title: 'create address',
-      code: `<span class="comment"># Create a new email address</span>
-<span class="prompt">$</span> <span class="cmd">curl -X POST https://clawmail.dev/api/addresses \\
-  -H <span class="string">"Content-Type: application/json"</span> \\
-  -d <span class="string">'{"local":"my-agent","recovery_email":"you@email.com"}'</span></span>
-
-<span class="response">{
-  <span class="key">"address"</span>: <span class="string">"my-agent@clawmail.dev"</span>,
-  <span class="key">"token"</span>:   <span class="string">"cm_a1b2c3d4e5f6..."</span>,
-  <span class="key">"note"</span>:    <span class="string">"Save this token — it will not be shown again."</span>
-}</span>`,
-      raw: `curl -X POST https://clawmail.dev/api/addresses \\
-  -H "Content-Type: application/json" \\
-  -d '{"local":"my-agent","recovery_email":"you@email.com"}'`
-    },
-    list: {
-      title: 'list emails',
-      code: `<span class="comment"># List unread emails</span>
-<span class="prompt">$</span> <span class="cmd">curl https://clawmail.dev/api/mail?unread=true \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span></span>
-
-<span class="response">{
-  <span class="key">"address"</span>: <span class="string">"my-agent@clawmail.dev"</span>,
-  <span class="key">"unread_count"</span>: 2,
-  <span class="key">"emails"</span>: [
-    {
-      <span class="key">"id"</span>: <span class="string">"e8f1a2b3..."</span>,
-      <span class="key">"from_addr"</span>: <span class="string">"alice@example.com"</span>,
-      <span class="key">"subject"</span>: <span class="string">"Meeting tomorrow"</span>,
-      <span class="key">"received_at"</span>: <span class="string">"2025-01-31T14:30:00Z"</span>
-    }
-  ]
-}</span>`,
-      raw: `curl https://clawmail.dev/api/mail?unread=true \\
-  -H "Authorization: Bearer cm_a1b2c3d4..."`
-    },
-    read: {
-      title: 'read email',
-      code: `<span class="comment"># Get full email with body</span>
-<span class="prompt">$</span> <span class="cmd">curl https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span></span>
-
-<span class="response">{
-  <span class="key">"id"</span>: <span class="string">"e8f1a2b3..."</span>,
-  <span class="key">"from_addr"</span>: <span class="string">"alice@example.com"</span>,
-  <span class="key">"from_name"</span>: <span class="string">"Alice"</span>,
-  <span class="key">"subject"</span>: <span class="string">"Meeting tomorrow"</span>,
-  <span class="key">"body_text"</span>: <span class="string">"Hey, confirming our 2pm..."</span>,
-  <span class="key">"body_html"</span>: <span class="string">"&lt;p&gt;Hey, confirming...&lt;/p&gt;"</span>,
-  <span class="key">"is_read"</span>: false
-}</span>`,
-      raw: `curl https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H "Authorization: Bearer cm_a1b2c3d4..."`
-    },
-    update: {
-      title: 'mark as read',
-      code: `<span class="comment"># Mark email as read</span>
-<span class="prompt">$</span> <span class="cmd">curl -X PATCH https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span> \\
-  -H <span class="string">"Content-Type: application/json"</span> \\
-  -d <span class="string">'{"is_read": true}'</span></span>
-
-<span class="response">{ <span class="key">"ok"</span>: true }</span>
-
-<span class="comment"># Archive email</span>
-<span class="prompt">$</span> <span class="cmd">curl -X PATCH https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span> \\
-  -H <span class="string">"Content-Type: application/json"</span> \\
-  -d <span class="string">'{"is_archived": true}'</span></span>
-
-<span class="response">{ <span class="key">"ok"</span>: true }</span>`,
-      raw: `curl -X PATCH https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H "Authorization: Bearer cm_a1b2c3d4..." \\
-  -H "Content-Type: application/json" \\
-  -d '{"is_read": true}'`
-    },
-    delete: {
-      title: 'delete email',
-      code: `<span class="comment"># Delete a specific email</span>
-<span class="prompt">$</span> <span class="cmd">curl -X DELETE https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span></span>
-
-<span class="response">{ <span class="key">"ok"</span>: true }</span>`,
-      raw: `curl -X DELETE https://clawmail.dev/api/mail/e8f1a2b3 \\
-  -H "Authorization: Bearer cm_a1b2c3d4..."`
-    },
-    recover: {
-      title: 'recover token',
-      code: `<span class="comment"># Recover token — new token is emailed to recovery address</span>
-<span class="comment"># Rate limited: 3 attempts per address per hour</span>
-<span class="prompt">$</span> <span class="cmd">curl -X POST https://clawmail.dev/api/recover \\
-  -H <span class="string">"Content-Type: application/json"</span> \\
-  -d <span class="string">'{"address":"my-agent@clawmail.dev","recovery_email":"you@email.com"}'</span></span>
-
-<span class="response">{
-  <span class="key">"message"</span>: <span class="string">"If the address and recovery email match, a new token will be sent."</span>
-}</span>
-<span class="comment"># Token is NEVER returned in the response — check your email</span>`,
-      raw: `curl -X POST https://clawmail.dev/api/recover \\
-  -H "Content-Type: application/json" \\
-  -d '{"address":"my-agent@clawmail.dev","recovery_email":"you@email.com"}'`
-    },
-    nuke: {
-      title: 'delete address',
-      code: `<span class="comment"># Delete address and all associated emails</span>
-<span class="prompt">$</span> <span class="cmd">curl -X DELETE https://clawmail.dev/api/addresses/me \\
-  -H <span class="string">"Authorization: Bearer cm_a1b2c3d4..."</span></span>
-
-<span class="response">{
-  <span class="key">"ok"</span>: true,
-  <span class="key">"deleted"</span>: <span class="string">"my-agent@clawmail.dev"</span>
-}</span>`,
-      raw: `curl -X DELETE https://clawmail.dev/api/addresses/me \\
-  -H "Authorization: Bearer cm_a1b2c3d4..."`
-    }
-  };
-
-  let currentExample = 'create';
-
-  function showExample(key) {
-    const ex = examples[key];
-    if (!ex) return;
-    currentExample = key;
-    document.getElementById('exampleTitle').textContent = ex.title;
-    document.getElementById('apiExampleBody').innerHTML = ex.code;
-    document.querySelectorAll('.endpoint').forEach(el => {
-      el.classList.toggle('active', el.dataset.example === key);
-    });
-  }
-
-  function copyExample() {
-    const raw = examples[currentExample]?.raw;
-    if (!raw) return;
-    navigator.clipboard.writeText(raw).then(() => {
-      const btn = document.querySelector('.copy-btn');
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = 'Copy', 2000);
-    });
-  }
-
-  // Initialize
-  showExample('create');
-
-  // Endpoint click handlers
-  document.querySelectorAll('.endpoint').forEach(el => {
-    el.addEventListener('click', () => showExample(el.dataset.example));
-  });
-
-  // ── Scroll-based Nav ────────────────────────
+  // Nav scroll effect
   const nav = document.getElementById('nav');
   window.addEventListener('scroll', () => {
     nav.classList.toggle('scrolled', window.scrollY > 40);
   }, { passive: true });
 
-  // ── Mobile Menu ─────────────────────────────
-  document.getElementById('mobileToggle').addEventListener('click', () => {
-    document.getElementById('navLinks').classList.toggle('open');
-  });
-  // Close mobile menu when a link is clicked
-  document.querySelectorAll('.nav-links a').forEach(a => {
-    a.addEventListener('click', () => {
-      document.getElementById('navLinks').classList.remove('open');
-    });
-  });
-
-  // ── Intersection Observer for Reveals ───────
+  // Fade in on scroll
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -1268,11 +859,11 @@
         observer.unobserve(entry.target);
       }
     });
-  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
 
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
 
-  // ── Smooth scroll for anchor links ──────────
+  // Smooth scroll
   document.querySelectorAll('a[href^="#"]').forEach(a => {
     a.addEventListener('click', (e) => {
       const target = document.querySelector(a.getAttribute('href'));

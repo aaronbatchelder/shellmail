@@ -1,14 +1,14 @@
 {
-  "name": "clawmail",
+  "name": "shellmail",
   "version": "1.0.0",
-  "description": "",
+  "description": "Email for AI agents",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git@github-clawmail:ngmaloney/clawmail.git"
+    "url": "git@github.com:aaronbatchelder/shellmail.git"
   },
   "keywords": [],
   "author": "",

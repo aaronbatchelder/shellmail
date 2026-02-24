@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "ShellMail",
+  "name_for_model": "shellmail",
+  "description_for_human": "Email for AI agents. Create inboxes, receive mail, extract OTPs via REST API.",
+  "description_for_model": "ShellMail provides email addresses for AI agents. Use it to: 1) Create email addresses at @shellmail.ai, 2) Receive and read emails via API, 3) Automatically extract OTP/verification codes, 4) Get webhook notifications on new mail. Authentication uses Bearer tokens. The OTP endpoint supports long-polling to wait for codes to arrive.",
+  "auth": {
+    "type": "http",
+    "authorization_type": "bearer"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://shellmail.ai/openapi.json"
+  },
+  "logo_url": "https://shellmail.ai/logo.png",
+  "contact_email": "support@shellmail.ai",
+  "legal_info_url": "https://shellmail.ai"
+}

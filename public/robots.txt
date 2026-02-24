@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# AI/LLM discovery
+# llms.txt: https://shellmail.ai/llms.txt
+# OpenAPI: https://shellmail.ai/openapi.json
+# AI Plugin: https://shellmail.ai/.well-known/ai-plugin.json

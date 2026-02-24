@@ -1,19 +1,24 @@
-name = "clawmail"
+name = "shellmail"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 
 workers_dev = true
 
+routes = [
+  { pattern = "shellmail.ai/*", zone_name = "shellmail.ai" },
+  { pattern = "www.shellmail.ai/*", zone_name = "shellmail.ai" }
+]
+
 [assets]
 directory = "./public"
 
 [vars]
-DOMAIN = "clawmail.dev"
+DOMAIN = "shellmail.ai"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "clawmail"
-database_id = "2c80e2f0-272c-42b7-a2d1-841c8b08eb08"
+database_name = "shellmail"
+database_id = "8cad35bc-7f39-43f1-a36b-2884a0d24692"
 
 [triggers]
-crons = ["0 0 * * *"] # Daily at midnight UTC
+crons = ["0 3 * * *"] # Daily at 3am UTC

@@ -1,0 +1,481 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ShellMail API",
+    "description": "Email for AI agents. Create inboxes, receive mail, extract OTPs.",
+    "version": "1.0.0",
+    "contact": {
+      "url": "https://shellmail.ai"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://shellmail.ai",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/addresses": {
+      "post": {
+        "operationId": "createAddress",
+        "summary": "Create a new email address",
+        "description": "Creates a new @shellmail.ai email address. Returns a token for API access.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["local", "recovery_email"],
+                "properties": {
+                  "local": {
+                    "type": "string",
+                    "description": "Local part of email (before @). 2-64 chars, alphanumeric with dots/hyphens/underscores.",
+                    "example": "my-agent"
+                  },
+                  "recovery_email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Email for token recovery",
+                    "example": "you@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Address created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "example": "my-agent@shellmail.ai"
+                    },
+                    "token": {
+                      "type": "string",
+                      "example": "sm_abc123..."
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Address already taken"
+          }
+        }
+      }
+    },
+    "/api/mail": {
+      "get": {
+        "operationId": "listEmails",
+        "summary": "List emails in inbox",
+        "parameters": [
+          {
+            "name": "unread",
+            "in": "query",
+            "schema": { "type": "boolean" },
+            "description": "Only return unread emails"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": { "type": "string" },
+                    "unread_count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/EmailSummary" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/otp": {
+      "get": {
+        "operationId": "getOtp",
+        "summary": "Get latest OTP/verification code",
+        "description": "Returns the most recent OTP code. Supports long-polling with timeout parameter.",
+        "parameters": [
+          {
+            "name": "timeout",
+            "in": "query",
+            "schema": { "type": "integer", "maximum": 30000 },
+            "description": "Wait up to this many milliseconds for an OTP to arrive (max 30000)"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by sender address/domain"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "Only return OTPs received after this timestamp"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OTP result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": { "type": "boolean" },
+                    "code": { "type": "string", "nullable": true },
+                    "link": { "type": "string", "nullable": true },
+                    "from": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "email_id": { "type": "string" },
+                    "received_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/search": {
+      "get": {
+        "operationId": "searchEmails",
+        "summary": "Search emails",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search query (matches subject, body, sender)"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by sender"
+          },
+          {
+            "name": "has_otp",
+            "in": "query",
+            "schema": { "type": "boolean" },
+            "description": "Only return emails with OTP codes"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/EmailSummary" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/{id}": {
+      "get": {
+        "operationId": "getEmail",
+        "summary": "Read full email",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full email",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Email" }
+              }
+            }
+          },
+          "404": {
+            "description": "Email not found"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateEmail",
+        "summary": "Mark email as read or archive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "is_read": { "type": "boolean" },
+                  "is_archived": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEmail",
+        "summary": "Delete email",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/webhook": {
+      "get": {
+        "operationId": "getWebhook",
+        "summary": "Get webhook configuration",
+        "responses": {
+          "200": {
+            "description": "Webhook config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configured": { "type": "boolean" },
+                    "url": { "type": "string", "nullable": true },
+                    "has_secret": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setWebhook",
+        "summary": "Configure webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Webhook URL to receive email notifications"
+                  },
+                  "secret": {
+                    "type": "string",
+                    "description": "Optional custom secret for HMAC signature"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "url": { "type": "string" },
+                    "secret": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "summary": "Remove webhook",
+        "responses": {
+          "200": {
+            "description": "Webhook removed"
+          }
+        }
+      }
+    },
+    "/api/recover": {
+      "post": {
+        "operationId": "recoverToken",
+        "summary": "Recover token via email",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["address", "recovery_email"],
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "example": "my-agent@shellmail.ai"
+                  },
+                  "recovery_email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recovery initiated (new token sent to recovery email if match)"
+          }
+        }
+      }
+    },
+    "/api/addresses/me": {
+      "delete": {
+        "operationId": "deleteAddress",
+        "summary": "Delete address and all emails",
+        "responses": {
+          "200": {
+            "description": "Address deleted"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "service": { "type": "string" },
+                    "status": { "type": "string" },
+                    "domain": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Token received when creating address (sm_...)"
+      }
+    },
+    "schemas": {
+      "EmailSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "from_addr": { "type": "string" },
+          "from_name": { "type": "string", "nullable": true },
+          "subject": { "type": "string" },
+          "received_at": { "type": "string", "format": "date-time" },
+          "is_read": { "type": "boolean" },
+          "otp_code": { "type": "string", "nullable": true },
+          "otp_link": { "type": "string", "nullable": true },
+          "expires_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "Email": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "from_addr": { "type": "string" },
+          "from_name": { "type": "string", "nullable": true },
+          "subject": { "type": "string" },
+          "body_text": { "type": "string", "nullable": true },
+          "body_html": { "type": "string", "nullable": true },
+          "received_at": { "type": "string", "format": "date-time" },
+          "is_read": { "type": "boolean" },
+          "is_archived": { "type": "boolean" },
+          "expires_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      }
+    }
+  }
+}

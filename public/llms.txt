@@ -1,0 +1,151 @@
+# ShellMail - Email for AI Agents
+
+> Give your AI agent a real email inbox in under 60 seconds.
+
+## What is ShellMail?
+
+ShellMail provides ephemeral email addresses for AI agents via a simple REST API. No SMTP, no IMAP, no servers to manage. Create an address, receive mail, extract OTPs automatically.
+
+## Quick Start
+
+```bash
+# Install CLI
+npx shellmail setup
+
+# Or use the API directly
+curl -X POST https://shellmail.ai/api/addresses \
+  -H "Content-Type: application/json" \
+  -d '{"local":"my-agent","recovery_email":"you@email.com"}'
+```
+
+## API Base URL
+
+https://shellmail.ai
+
+## Authentication
+
+All endpoints (except POST /api/addresses) require Bearer token auth:
+```
+Authorization: Bearer sm_your_token_here
+```
+
+## Core Endpoints
+
+### Create Address (no auth required)
+POST /api/addresses
+Body: {"local": "my-agent", "recovery_email": "you@email.com"}
+Returns: {"address": "my-agent@shellmail.ai", "token": "sm_..."}
+
+### List Emails
+GET /api/mail
+Query params: unread=true, limit=50, offset=0
+Returns: {"address": "...", "unread_count": 2, "emails": [...]}
+
+### Read Email
+GET /api/mail/:id
+Returns: {"id": "...", "from_addr": "...", "subject": "...", "body_text": "...", "body_html": "..."}
+
+### Get Latest OTP (supports long-polling)
+GET /api/mail/otp
+Query params: timeout=30000 (wait up to 30s for OTP), from=github.com (filter by sender)
+Returns: {"found": true, "code": "123456", "from": "...", "subject": "..."}
+
+### Search Emails
+GET /api/mail/search
+Query params: q=keyword, from=sender, has_otp=true, limit=20
+Returns: {"count": 5, "emails": [...]}
+
+### Mark Read/Archive
+PATCH /api/mail/:id
+Body: {"is_read": true} or {"is_archived": true}
+
+### Delete Email
+DELETE /api/mail/:id
+
+### Configure Webhook
+PUT /api/webhook
+Body: {"url": "https://your-server.com/webhook"}
+Returns: {"url": "...", "secret": "whsec_..."}
+
+### Get Webhook Config
+GET /api/webhook
+
+### Delete Webhook
+DELETE /api/webhook
+
+### Recover Token (sends new token to recovery email)
+POST /api/recover
+Body: {"address": "my-agent@shellmail.ai", "recovery_email": "you@email.com"}
+
+### Delete Address
+DELETE /api/addresses/me
+
+## Key Features
+
+- **OTP Extraction**: Verification codes are automatically extracted from emails
+- **Long Polling**: Wait for OTPs with ?timeout=30000 (up to 30 seconds)
+- **Webhooks**: Get notified instantly when email arrives (HMAC-SHA256 signed)
+- **Ephemeral**: Messages auto-delete after 7 days (free tier)
+- **Edge-fast**: Runs on Cloudflare Workers globally
+
+## Rate Limits
+
+- Token recovery: 3 attempts per address per hour
+- General API: No strict limits, be reasonable
+
+## CLI Commands
+
+```bash
+npx shellmail setup          # Create new address interactively
+npx shellmail inbox          # List emails
+npx shellmail inbox -u       # List unread only
+npx shellmail read <id>      # Read specific email
+npx shellmail otp            # Get latest OTP code
+npx shellmail otp -w 30      # Wait up to 30s for OTP
+npx shellmail search --otp   # Find emails with OTPs
+npx shellmail webhook -s URL # Set webhook
+npx shellmail status         # Check service status
+```
+
+## Environment Variables
+
+SHELLMAIL_TOKEN - Your API token (alternative to config file)
+SHELLMAIL_API_URL - API base URL (default: https://shellmail.ai)
+
+## Example: Wait for GitHub OTP
+
+```bash
+# Using CLI
+shellmail otp -w 30 -f github.com
+
+# Using API
+curl "https://shellmail.ai/api/mail/otp?timeout=30000&from=github.com" \
+  -H "Authorization: Bearer sm_..."
+```
+
+## Webhook Payload
+
+When email arrives, we POST to your webhook URL:
+```json
+{
+  "event": "email.received",
+  "address": "my-agent@shellmail.ai",
+  "email": {
+    "id": "abc123",
+    "from_addr": "noreply@github.com",
+    "from_name": "GitHub",
+    "subject": "Your verification code",
+    "received_at": "2026-02-24T12:00:00Z",
+    "otp_code": "123456",
+    "otp_link": null
+  }
+}
+```
+
+Verify signature with X-ShellMail-Signature header using your webhook secret (HMAC-SHA256).
+
+## Links
+
+- Website: https://shellmail.ai
+- GitHub: https://github.com/aaronbatchelder/shellmail
+- Health Check: https://shellmail.ai/health

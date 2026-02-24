@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="https://shellmail.ai">Website</a> •
+  <a href="https://clawhub.ai/aaronbatchelder/shellmail">ClawHub</a> •
   <a href="https://www.npmjs.com/package/shellmail">npm</a> •
-  <a href="https://shellmail.ai/openapi.json">OpenAPI</a> •
-  <a href="https://shellmail.ai/llms.txt">llms.txt</a>
+  <a href="https://shellmail.ai/openapi.json">OpenAPI</a>
 </p>
 
 ---
@@ -134,37 +134,32 @@ See [openapi.json](https://shellmail.ai/openapi.json) or [llms.txt](https://shel
 
 ## OpenClaw Integration
 
-ShellMail includes an [OpenClaw](https://github.com/anthropics/openclaw) skill for direct agent integration.
+ShellMail is available on [ClawHub](https://clawhub.ai/aaronbatchelder/shellmail) for instant OpenClaw integration.
 
-### Install the Skill
+### Install via ClawHub
 
 ```bash
-cp -r skill/ ~/.openclaw/skills/shellmail
+clawhub install shellmail
 ```
 
-Add to your `openclaw.json`:
+### Or Manual Install
 
-```json
-{
-  "skills": {
-    "entries": {
-      "shellmail": {
-        "env": {
-          "SHELLMAIL_TOKEN": "sm_your_token_here"
-        }
-      }
-    }
-  }
-}
+```bash
+cp -r skill/ ~/.openclaw/workspace/skills/shellmail
+```
+
+Then set your token:
+```bash
+gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":"sm_..."}}}}}
 ```
 
 ### Usage
 
 Your agent can now check email conversationally:
 
-- *"Check my ShellMail inbox"*
-- *"Get the latest OTP code"*
-- *"Search for emails from GitHub"*
+- *"Check my email"*
+- *"Get the verification code"*
+- *"Wait for the GitHub OTP"*
 
 ## Environment Variables
 
@@ -228,10 +223,10 @@ Configure Cloudflare Email Routing to forward to your worker.
 ## Links
 
 - [shellmail.ai](https://shellmail.ai) — Website & docs
+- [ClawHub](https://clawhub.ai/aaronbatchelder/shellmail) — OpenClaw skill
 - [npm](https://www.npmjs.com/package/shellmail) — CLI package
 - [OpenAPI](https://shellmail.ai/openapi.json) — API specification
 - [llms.txt](https://shellmail.ai/llms.txt) — LLM-friendly docs
-- [AI Plugin](https://shellmail.ai/.well-known/ai-plugin.json) — ChatGPT plugin manifest
 
 ## License
 

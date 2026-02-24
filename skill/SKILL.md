@@ -1,66 +1,110 @@
 ---
-name: clawmail
-description: Check, read, and manage ClawMail inbound email for AI agents. Use when checking email, reading messages, creating email addresses, or managing inbox at clawmail.dev. Trigger on "check mail", "email", "inbox", "clawmail", or any email-related requests.
+name: shellmail
+description: Email API for AI agents. Check inbox, read emails, extract OTP codes, search messages via ShellMail. Trigger on "check email", "inbox", "otp", "verification code", "shellmail", or any email-related requests.
+homepage: https://shellmail.ai
+source: https://github.com/aaronbatchelder/shellmail
+env:
+  SHELLMAIL_TOKEN:
+    required: true
+    sensitive: true
+    description: Bearer token for ShellMail API authentication (grants access to inbox and OTPs)
+  SHELLMAIL_API_URL:
+    required: false
+    default: https://shellmail.ai
+    description: API base URL (only change for self-hosted instances)
 ---
 
-# ClawMail
+# ShellMail
 
-Inbound email proxy for AI agents. Poll and manage email via REST API.
+Email for AI agents via shellmail.ai. Create inboxes, receive mail, extract OTPs automatically.
 
 ## First-Time Setup
 
-If no token is configured, provision one for the user:
+If no token is configured:
 
-1. Ask what local part they want (e.g., "pinchy") and a recovery email
-2. Run: `{baseDir}/scripts/clawmail.sh create <local> <recovery_email>`
-3. Save the returned token by patching the gateway config:
+1. Ask user for desired email name (e.g., "atlas") and a recovery email
+2. Run: `{baseDir}/scripts/shellmail.sh create <name> <recovery_email>`
+3. Save the returned token:
 
 ```
-gateway config.patch {"skills":{"entries":{"clawmail":{"env":{"CLAWMAIL_TOKEN":"cm_...","CLAWMAIL_API_URL":"https://clawmail.dev"}}}}}
+gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":"sm_..."}}}}}
 ```
 
-4. Tell the user to save the token somewhere safe — it won't be shown again
+4. Tell user to save the token safely — it won't be shown again
 
-## Existing Setup
-
-If already configured, `CLAWMAIL_TOKEN` and `CLAWMAIL_API_URL` are set in `openclaw.json` under `skills.entries.clawmail.env`.
-
-## CLI
+## Commands
 
 ```bash
-{baseDir}/scripts/clawmail.sh <command>
+{baseDir}/scripts/shellmail.sh <command>
 ```
 
-Commands:
-
-- `inbox` — list emails (`--unread` for unread only)
-- `read <id>` — get full email body
-- `mark-read <id>` — mark as read
-- `archive <id>` — archive email
-- `delete <id>` — delete email
-- `create <local> <recovery_email>` — create new address
-- `health` — check API status
-
-## Direct API
-
-All authenticated endpoints use `Authorization: Bearer cm_...`
-
-```
-GET    /api/mail               — list emails (?unread=true&limit=50)
-GET    /api/mail/:id           — full email
-PATCH  /api/mail/:id           — update {is_read, is_archived}
-DELETE /api/mail/:id           — delete email
-POST   /api/addresses          — create {local, recovery_email}
-POST   /api/recover            — recover {address, recovery_email}
-DELETE /api/addresses/me       — delete address + all mail
-```
-
-## Polling Pattern
-
-Check inbox during heartbeats or on a cron:
-
+### Check Inbox
 ```bash
-CLAWMAIL_TOKEN=cm_... {baseDir}/scripts/clawmail.sh inbox --unread
+{baseDir}/scripts/shellmail.sh inbox
+{baseDir}/scripts/shellmail.sh inbox --unread
 ```
 
-If unread_count > 0, read and summarize new emails for the user.
+### Read Email
+```bash
+{baseDir}/scripts/shellmail.sh read <email_id>
+```
+
+### Get OTP Code
+```bash
+# Get latest OTP
+{baseDir}/scripts/shellmail.sh otp
+
+# Wait up to 30 seconds for OTP
+{baseDir}/scripts/shellmail.sh otp --wait 30
+
+# Filter by sender
+{baseDir}/scripts/shellmail.sh otp --wait 30 --from github.com
+```
+
+### Search Emails
+```bash
+{baseDir}/scripts/shellmail.sh search --query "verification"
+{baseDir}/scripts/shellmail.sh search --otp
+{baseDir}/scripts/shellmail.sh search --from stripe.com
+```
+
+### Other Commands
+```bash
+{baseDir}/scripts/shellmail.sh mark-read <id>
+{baseDir}/scripts/shellmail.sh archive <id>
+{baseDir}/scripts/shellmail.sh delete <id>
+{baseDir}/scripts/shellmail.sh health
+```
+
+## Common Patterns
+
+**User says "check my email":**
+```bash
+{baseDir}/scripts/shellmail.sh inbox --unread
+```
+
+**User says "get the verification code":**
+```bash
+{baseDir}/scripts/shellmail.sh otp --wait 30
+```
+
+**User says "wait for GitHub OTP":**
+```bash
+{baseDir}/scripts/shellmail.sh otp --wait 30 --from github.com
+```
+
+## API Reference
+
+Base URL: `https://shellmail.ai`
+
+All endpoints use `Authorization: Bearer $SHELLMAIL_TOKEN`
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mail` | GET | List emails (?unread=true&limit=50) |
+| `/api/mail/:id` | GET | Read full email |
+| `/api/mail/:id` | PATCH | Update {is_read, is_archived} |
+| `/api/mail/:id` | DELETE | Delete email |
+| `/api/mail/otp` | GET | Get OTP (?timeout=30000&from=domain) |
+| `/api/mail/search` | GET | Search (?q=text&from=domain&has_otp=true) |
+| `/api/addresses` | POST | Create {local, recovery_email} |

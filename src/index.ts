@@ -1,5 +1,5 @@
 /**
- * ClawMail — Combined Worker
+ * ShellMail — Combined Worker
  * Handles both REST API (fetch) and inbound email (email)
  */
 

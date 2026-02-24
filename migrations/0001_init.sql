@@ -1,10 +1,10 @@
--- ClawMail MVP Schema
+-- ShellMail MVP Schema
 
 -- Addresses: each row is a unique email address with its own auth token
 CREATE TABLE addresses (
   id            TEXT PRIMARY KEY,
   local_part    TEXT NOT NULL,
-  domain        TEXT NOT NULL DEFAULT 'clawmail.dev',
+  domain        TEXT NOT NULL DEFAULT 'shellmail.ai',
   token_hash    TEXT NOT NULL,
   recovery_hash TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),

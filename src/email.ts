@@ -1,10 +1,27 @@
 /**
- * ClawMail — Email Worker
+ * ShellMail — Email Worker
  * Receives inbound email via Cloudflare Email Routing and stores in D1
  */
 
 import { Env, Address } from "./types";
 import { generateId } from "./auth";
+import { extractOtp } from "./otp";
+import { deliverWebhook, buildEmailPayload } from "./webhook";
+
+/** Retention days by plan tier */
+const RETENTION_DAYS: Record<string, number> = {
+  free: 7,
+  shell: 30,
+  reef: 90,
+};
+
+/** Calculate expiration date based on plan */
+function calculateExpiresAt(plan: string): string {
+  const days = RETENTION_DAYS[plan] || RETENTION_DAYS.free;
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + days);
+  return expiresAt.toISOString();
+}
 
 /** Parse email stream into usable parts */
 async function parseEmail(message: ForwardableEmailMessage): Promise<{
@@ -14,6 +31,7 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   subject: string;
   bodyText: string | null;
   bodyHtml: string | null;
+  rawHeaders: string;
 }> {
   const from = message.from;
   const to = message.to;
@@ -21,6 +39,10 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
 
   // Read the raw email
   const rawEmail = await new Response(message.raw).text();
+
+  // Extract headers (everything before first double newline)
+  const headerEnd = rawEmail.indexOf("\r\n\r\n") || rawEmail.indexOf("\n\n");
+  const rawHeaders = headerEnd > -1 ? rawEmail.substring(0, headerEnd) : "";
 
   // Basic parser — extract text and html parts
   let bodyText: string | null = null;
@@ -62,11 +84,13 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   const fromMatch = from.match(/^"?(.+?)"?\s*<.+>$/);
   const fromName = fromMatch ? fromMatch[1].trim() : null;
 
-  return { from, fromName, to, subject, bodyText, bodyHtml };
+  return { from, fromName, to, subject, bodyText, bodyHtml, rawHeaders };
 }
 
 export default {
-  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Attach ctx to env for use in webhook delivery
+    env.ctx = ctx;
     const parsed = await parseEmail(message);
 
     // Extract local part from the To address
@@ -87,21 +111,26 @@ export default {
 
     if (!addr) {
       console.log(`No address found for ${parsed.to}, dropping email`);
-      // Could optionally reject: message.setReject("Address not found");
       return;
     }
 
     if (addr.status !== "active") {
-      console.log(`Address ${parsed.to} is disabled, rejection email`);
+      console.log(`Address ${parsed.to} is disabled, rejecting email`);
       message.setReject("Address is disabled");
       return;
     }
 
-    // Store the email
+    // Extract OTP code and link
+    const otp = extractOtp(parsed.subject, parsed.bodyText, parsed.bodyHtml);
+
+    // Calculate expiration based on plan
+    const expiresAt = calculateExpiresAt(addr.plan || 'free');
+
+    // Store the email with OTP data and expiration
     const emailId = generateId();
     await env.DB.prepare(
-      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html, raw_headers, otp_code, otp_link, otp_extracted, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         emailId,
@@ -110,25 +139,59 @@ export default {
         parsed.fromName,
         parsed.subject,
         parsed.bodyText,
-        parsed.bodyHtml
+        parsed.bodyHtml,
+        parsed.rawHeaders,
+        otp.code,
+        otp.link,
+        otp.code || otp.link ? 1 : 0,
+        expiresAt
       )
       .run();
 
     console.log(
-      `Stored email ${emailId} for ${parsed.to} from ${parsed.from}: ${parsed.subject}`
+      `Stored email ${emailId} for ${parsed.to} from ${parsed.from}: ${parsed.subject}` +
+      (otp.code ? ` [OTP: ${otp.code}]` : '') +
+      (otp.link ? ` [Link detected]` : '')
     );
 
+    // Update address activity timestamp and message count
+    await env.DB.prepare(
+      `UPDATE addresses SET last_activity_at = datetime('now'), messages_received = messages_received + 1 WHERE id = ?`
+    )
+      .bind(addr.id)
+      .run();
+
+    // Deliver webhook if configured
+    if (addr.webhook_url) {
+      const fullAddress = `${addr.local_part}@${addr.domain}`;
+      const payload = buildEmailPayload(fullAddress, {
+        id: emailId,
+        from_addr: parsed.from,
+        from_name: parsed.fromName,
+        subject: parsed.subject,
+        received_at: new Date().toISOString(),
+        otp_code: otp.code,
+        otp_link: otp.link,
+      });
+
+      // Fire and forget — don't block email processing
+      env.ctx?.waitUntil(
+        deliverWebhook(env, addr.id, addr.webhook_url, addr.webhook_secret || null, payload)
+          .then(ok => console.log(`Webhook delivery ${ok ? 'succeeded' : 'failed'} for ${fullAddress}`))
+          .catch(e => console.error(`Webhook error for ${fullAddress}:`, e))
+      );
+    }
+
     // Enforce message limit (FIFO) if set
-    // 0 = unlimited
     if (addr.max_messages > 0) {
       try {
         await env.DB.prepare(
-          `DELETE FROM emails 
-           WHERE address_id = ? 
+          `DELETE FROM emails
+           WHERE address_id = ?
            AND id NOT IN (
-             SELECT id FROM emails 
-             WHERE address_id = ? 
-             ORDER BY received_at DESC 
+             SELECT id FROM emails
+             WHERE address_id = ?
+             ORDER BY received_at DESC
              LIMIT ?
            )`
         )

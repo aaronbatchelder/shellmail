@@ -1,21 +1,31 @@
 /**
- * Auth utilities for ClawMail
+ * Auth utilities for ShellMail
  * Token-per-address model: each address has its own bearer token
  */
 
-/** Generate a random token with cm_ prefix */
+/** Generate a random token with sm_ prefix */
 export function generateToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   const hex = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return `cm_${hex}`;
+  return `sm_${hex}`;
 }
 
 /** Generate a UUID v4 */
 export function generateId(): string {
   return crypto.randomUUID();
+}
+
+/** Generate a random local part for auto-generated addresses */
+export function generateLocalPart(): string {
+  const adjectives = ["swift", "quick", "bright", "calm", "cool", "keen", "bold", "fair"];
+  const nouns = ["shell", "wave", "reef", "crab", "tide", "sand", "surf", "coral"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const num = Math.floor(Math.random() * 9000) + 1000; // 4 digit number
+  return `${adj}-${noun}-${num}`;
 }
 
 /** SHA-256 hash a string (for token and recovery email storage) */
@@ -31,7 +41,7 @@ export async function hash(input: string): Promise<string> {
 export function extractToken(request: Request): string | null {
   const auth = request.headers.get("Authorization");
   if (!auth) return null;
-  const match = auth.match(/^Bearer\s+(cm_[a-f0-9]+)$/i);
+  const match = auth.match(/^Bearer\s+(sm_[a-f0-9]+)$/i);
   return match ? match[1] : null;
 }
 
