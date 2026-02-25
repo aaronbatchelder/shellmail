@@ -73,18 +73,28 @@ async function getStats(env: Env) {
 
 // ── Routes ───────────────────────────────────────────────
 
+// IPs exempt from rate limiting (for testing)
+const WHITELISTED_IPS = ["69.5.113.226"];
+
 /** POST /api/addresses — create a new email address */
 async function createAddress(request: Request, env: Env): Promise<Response> {
-  // Rate limit by IP: max 5 addresses per hour
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  const ipAllowed = await checkRateLimit(
-    env.DB,
-    `create_ip:${ip}`,
-    5,
-    60 * 60 * 1000
-  );
-  if (!ipAllowed) {
-    return error("Too many addresses created. Try again later.", 429);
+
+  // Skip rate limiting for whitelisted IPs or admin secret
+  const isWhitelisted = WHITELISTED_IPS.includes(ip);
+  const hasAdminSecret = env.ADMIN_SECRET && request.headers.get("X-Admin-Secret") === env.ADMIN_SECRET;
+
+  if (!isWhitelisted && !hasAdminSecret) {
+    // Rate limit by IP: max 5 addresses per hour
+    const ipAllowed = await checkRateLimit(
+      env.DB,
+      `create_ip:${ip}`,
+      5,
+      60 * 60 * 1000
+    );
+    if (!ipAllowed) {
+      return error("Too many addresses created. Try again later.", 429);
+    }
   }
 
   let body: CreateAddressRequest;
@@ -112,14 +122,16 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
 
   // Rate limit by recovery email: max 10 addresses per day
   const recoveryHash = await hash(recovery_email);
-  const emailAllowed = await checkRateLimit(
-    env.DB,
-    `create_email:${recoveryHash}`,
-    10,
-    24 * 60 * 60 * 1000
-  );
-  if (!emailAllowed) {
-    return error("Too many addresses for this recovery email. Try again tomorrow.", 429);
+  if (!isWhitelisted && !hasAdminSecret) {
+    const emailAllowed = await checkRateLimit(
+      env.DB,
+      `create_email:${recoveryHash}`,
+      10,
+      24 * 60 * 60 * 1000
+    );
+    if (!emailAllowed) {
+      return error("Too many addresses for this recovery email. Try again tomorrow.", 429);
+    }
   }
 
   // Check availability

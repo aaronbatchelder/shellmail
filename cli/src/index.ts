@@ -104,43 +104,25 @@ program
     console.log(chalk.bold("Your API token:"));
     console.log(chalk.yellow(`  ${result.token}\n`));
 
-    console.log(chalk.gray("⚠️  Save this token! It won't be shown again.\n"));
+    // Always save to config
+    saveConfig({
+      token: result.token,
+      address: result.address,
+    });
+    console.log(chalk.green("✓ Token saved to ~/.shellmail/config.json\n"));
 
-    // Save to config
-    const { save } = await inquirer.prompt([
-      {
-        type: "confirm",
-        name: "save",
-        message: "Save token to ~/.shellmail/config.json?",
-        default: true,
-      },
-    ]);
+    console.log(chalk.gray("⚠️  Save this token somewhere safe! It won't be shown again.\n"));
 
-    if (save) {
-      saveConfig({
-        token: result.token,
-        address: result.address,
-      });
-      console.log(chalk.green("\n✓ Config saved!\n"));
-    } else {
-      console.log(chalk.gray("\nSet SHELLMAIL_TOKEN env var to use the CLI:\n"));
-      console.log(chalk.cyan(`  export SHELLMAIL_TOKEN="${result.token}"\n`));
-    }
-
-    // Show OpenClaw integration snippet
+    // Show next steps
     console.log(chalk.bold("─".repeat(50)));
-    console.log(chalk.bold("\nOpenClaw Integration\n"));
-    console.log(chalk.gray("Install the skill from ClawHub:\n"));
-    console.log(chalk.cyan("  clawhub install aaronbatchelder/shellmail\n"));
-    console.log(chalk.gray("Then set your token:\n"));
-    console.log(chalk.cyan(`  export SHELLMAIL_TOKEN="${result.token}"\n`));
-    console.log(chalk.gray("Or add to your openclaw.json under skills.entries.shellmail.env\n"));
+    console.log(chalk.bold("\nNext Steps\n"));
+    console.log(`  1. Send a test email to ${chalk.cyan(result.address)}`);
+    console.log(`  2. Run ${chalk.cyan("shellmail inbox")} to see it arrive\n`);
 
-    // Show CLI commands
-    console.log(chalk.bold("─".repeat(50)));
-    console.log(chalk.bold("\nCLI Commands\n"));
+    console.log(chalk.bold("Commands\n"));
     console.log(`  ${chalk.cyan("shellmail inbox")}      Check your inbox`);
     console.log(`  ${chalk.cyan("shellmail otp -w 30")}  Wait for an OTP code`);
+    console.log(`  ${chalk.cyan("shellmail read <id>")} Read an email`);
     console.log(`  ${chalk.cyan("shellmail status")}     Verify setup\n`);
   });
 
