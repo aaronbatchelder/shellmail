@@ -228,6 +228,18 @@ npx wrangler deploy
 
 Configure Cloudflare Email Routing to forward to your worker.
 
+## Roadmap
+
+What's coming next:
+
+- **Sending** — Send emails from your agent, not just receive
+- **Multi-inbox management** — Switch between inboxes with `--profile work|personal`
+- **Custom domains** — Use `agent@yourdomain.com` instead of `@shellmail.ai`
+- **Storage tiers** — Configurable retention limits and message quotas
+- **Plan management** — Self-service upgrades and billing
+
+Have a feature request? [Open an issue](https://github.com/aaronbatchelder/shellmail/issues).
+
 ## Links
 
 - [shellmail.ai](https://shellmail.ai) — Website & docs
