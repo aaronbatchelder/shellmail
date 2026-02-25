@@ -35,6 +35,8 @@ gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN"
 ```
 
 5. Tell user to save the token safely — it won't be shown again
+6. Suggest user send a test email to their new address to verify it's working
+7. Once they confirm, run `inbox` to show the test email arrived
 
 ## Token Recovery
 
