@@ -141,16 +141,28 @@ case "$cmd" in
 
   create)
     [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: shellmail create <local> <recovery_email>" >&2; exit 1; }
-    curl -sf -X POST "$API_URL/api/addresses" \
+    # Build JSON safely using jq if available, otherwise python
+    if command -v jq >/dev/null 2>&1; then
+      json=$(jq -n --arg local "$1" --arg email "$2" '{local: $local, recovery_email: $email}')
+    else
+      json=$(python3 -c "import sys, json; print(json.dumps({'local': sys.argv[1], 'recovery_email': sys.argv[2]}))" "$1" "$2")
+    fi
+    printf '%s' "$json" | curl -sf -X POST "$API_URL/api/addresses" \
       -H "Content-Type: application/json" \
-      -d "{\"local\": \"$(json_escape "$1")\", \"recovery_email\": \"$(json_escape "$2")\"}"
+      -d @-
     ;;
 
   recover)
     [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: shellmail recover <address> <recovery_email>" >&2; exit 1; }
-    curl -sf -X POST "$API_URL/api/recover" \
+    # Build JSON safely using jq if available, otherwise python
+    if command -v jq >/dev/null 2>&1; then
+      json=$(jq -n --arg addr "$1" --arg email "$2" '{address: $addr, recovery_email: $email}')
+    else
+      json=$(python3 -c "import sys, json; print(json.dumps({'address': sys.argv[1], 'recovery_email': sys.argv[2]}))" "$1" "$2")
+    fi
+    printf '%s' "$json" | curl -sf -X POST "$API_URL/api/recover" \
       -H "Content-Type: application/json" \
-      -d "{\"address\": \"$(json_escape "$1")\", \"recovery_email\": \"$(json_escape "$2")\"}"
+      -d @-
     ;;
 
   delete-address)
