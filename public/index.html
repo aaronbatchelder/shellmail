@@ -782,12 +782,25 @@
           <div style="font-size: 14px; opacity: 0.8; margin-top: 8px;">Creates your inbox, saves your token, ready to use.</div>
         </div>
 
+        <div style="margin-bottom: 28px;">
+          <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; margin-bottom: 8px;">Claude Desktop / Cursor / Cline</div>
+          <div style="background: rgba(255,255,255,0.1); padding: 14px 18px; border-radius: 12px; font-family: 'DM Mono', monospace; font-size: 12px; line-height: 1.6;">
+            <div style="opacity: 0.6;">// claude_desktop_config.json</div>
+            <div>"shellmail": {</div>
+            <div style="margin-left: 16px;">"command": "npx",</div>
+            <div style="margin-left: 16px;">"args": ["-y", "shellmail-mcp"],</div>
+            <div style="margin-left: 16px;">"env": {"SHELLMAIL_TOKEN": "sm_..."}</div>
+            <div>}</div>
+          </div>
+          <div style="font-size: 14px; opacity: 0.8; margin-top: 8px;">Add to your MCP config. Works with any MCP-compatible client.</div>
+        </div>
+
         <div>
           <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; margin-bottom: 8px;">OpenClaw users</div>
           <div class="cli-cmd">
             <span>$</span> clawhub install shellmail
           </div>
-          <div style="font-size: 14px; opacity: 0.8; margin-top: 8px;">Installs the <a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank" style="color: var(--white); text-decoration: underline;">ClawHub skill</a>. Your agent can check email conversationally.</div>
+          <div style="font-size: 14px; opacity: 0.8; margin-top: 8px;">Installs the <a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank" style="color: var(--white); text-decoration: underline;">ClawHub skill</a>.</div>
         </div>
       </div>
       <div class="cli-terminal fade-in">
@@ -849,6 +862,7 @@
         <h4>Developers</h4>
         <ul>
           <li><a href="#api">Documentation</a></li>
+          <li><a href="https://www.npmjs.com/package/shellmail-mcp" target="_blank">MCP Server</a></li>
           <li><a href="https://clawhub.ai/aaronbatchelder/shellmail" target="_blank">ClawHub</a></li>
           <li><a href="https://github.com/aaronbatchelder/shellmail" target="_blank">GitHub</a></li>
         </ul>

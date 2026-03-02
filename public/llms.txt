@@ -18,6 +18,26 @@ curl -X POST https://shellmail.ai/api/addresses \
   -d '{"local":"my-agent","recovery_email":"you@email.com"}'
 ```
 
+## MCP Server (Claude Desktop, Cursor, Cline)
+
+Add to your MCP config (e.g., claude_desktop_config.json):
+
+```json
+{
+  "mcpServers": {
+    "shellmail": {
+      "command": "npx",
+      "args": ["-y", "shellmail-mcp"],
+      "env": {
+        "SHELLMAIL_TOKEN": "sm_your_token_here"
+      }
+    }
+  }
+}
+```
+
+Available tools: shellmail_inbox, shellmail_read, shellmail_otp, shellmail_send, shellmail_search, shellmail_sent, shellmail_delete, shellmail_mark_read
+
 ## API Base URL
 
 https://shellmail.ai
@@ -191,4 +211,6 @@ Verify signature with X-ShellMail-Signature header using your webhook secret (HM
 
 - Website: https://shellmail.ai
 - GitHub: https://github.com/aaronbatchelder/shellmail
+- MCP Server: https://www.npmjs.com/package/shellmail-mcp
+- CLI: https://www.npmjs.com/package/shellmail
 - Health Check: https://shellmail.ai/health
