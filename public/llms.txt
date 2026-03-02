@@ -118,9 +118,39 @@ DELETE /api/addresses/me
 - **OTP Extraction**: Verification codes are automatically extracted from emails
 - **Long Polling**: Wait for OTPs with ?timeout=30000 (up to 30 seconds)
 - **Webhooks**: Get notified instantly when email arrives (HMAC-SHA256 signed)
+- **Slack & Discord**: Paste Slack/Discord webhook URLs and get formatted notifications
+- **TypeScript SDK**: `npm install @shellmail/sdk` for first-class TypeScript support
+- **Multi-Inbox Profiles**: Manage multiple addresses with CLI profiles
 - **Reply Threading**: Use reply_to_id to maintain email threads
 - **Ephemeral**: Messages auto-delete after 7 days (free tier)
 - **Edge-fast**: Runs on Cloudflare Workers globally
+
+## TypeScript SDK
+
+```bash
+npm install @shellmail/sdk
+```
+
+```typescript
+import { ShellMail } from '@shellmail/sdk';
+
+const mail = new ShellMail({ token: 'sm_...' });
+const inbox = await mail.inbox();
+const code = await mail.waitForOtp(30, 'github.com');
+await mail.send({ to: 'user@example.com', subject: 'Hello', bodyText: 'Hi!' });
+```
+
+## Slack & Discord Webhooks
+
+Just paste your Slack or Discord webhook URL - payloads are auto-formatted:
+
+```bash
+# Slack
+shellmail webhook -s "https://hooks.slack.com/services/T.../B.../xxx"
+
+# Discord
+shellmail webhook -s "https://discord.com/api/webhooks/123/abc"
+```
 
 ## Rate Limits
 

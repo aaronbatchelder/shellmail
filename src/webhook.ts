@@ -38,6 +38,79 @@ async function signPayload(payload: string, secret: string): Promise<string> {
     .join("");
 }
 
+/** Detect if URL is a Slack webhook */
+function isSlackWebhook(url: string): boolean {
+  return url.includes("hooks.slack.com");
+}
+
+/** Detect if URL is a Discord webhook */
+function isDiscordWebhook(url: string): boolean {
+  return url.includes("discord.com/api/webhooks") || url.includes("discordapp.com/api/webhooks");
+}
+
+/** Format payload for Slack */
+function formatSlackPayload(payload: WebhookPayload): object {
+  const emoji = payload.email.has_otp ? "🔑" : "📧";
+  const otpText = payload.email.otp_code
+    ? `\n*OTP Code:* \`${payload.email.otp_code}\``
+    : payload.email.otp_link
+    ? `\n*Verification Link:* ${payload.email.otp_link}`
+    : "";
+
+  return {
+    text: `${emoji} New email for ${payload.address}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${emoji} *New Email*\n*To:* ${payload.address}\n*From:* ${payload.email.from_name || payload.email.from}\n*Subject:* ${payload.email.subject}${otpText}`,
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `ID: \`${payload.email.id}\` | ${new Date(payload.email.received_at).toLocaleString()}`,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** Format payload for Discord */
+function formatDiscordPayload(payload: WebhookPayload): object {
+  const color = payload.email.has_otp ? 0xf5c563 : 0x4ecdc4; // Golden for OTP, Ocean for regular
+  const otpField = payload.email.otp_code
+    ? { name: "🔑 OTP Code", value: `\`${payload.email.otp_code}\``, inline: true }
+    : payload.email.otp_link
+    ? { name: "🔗 Verification Link", value: payload.email.otp_link, inline: false }
+    : null;
+
+  const fields = [
+    { name: "From", value: payload.email.from_name || payload.email.from, inline: true },
+    { name: "Subject", value: payload.email.subject || "(no subject)", inline: true },
+  ];
+
+  if (otpField) fields.push(otpField);
+
+  return {
+    embeds: [
+      {
+        title: `📧 New Email for ${payload.address}`,
+        color,
+        fields,
+        footer: {
+          text: `ID: ${payload.email.id}`,
+        },
+        timestamp: payload.email.received_at,
+      },
+    ],
+  };
+}
+
 /** Deliver webhook with retry logic */
 export async function deliverWebhook(
   env: Env,
@@ -46,8 +119,23 @@ export async function deliverWebhook(
   webhookSecret: string | null,
   payload: WebhookPayload
 ): Promise<boolean> {
-  const payloadJson = JSON.stringify(payload);
   const logId = generateId();
+
+  // Detect platform and format payload accordingly
+  let finalPayload: object;
+  let skipSignature = false;
+
+  if (isSlackWebhook(webhookUrl)) {
+    finalPayload = formatSlackPayload(payload);
+    skipSignature = true; // Slack doesn't use our signatures
+  } else if (isDiscordWebhook(webhookUrl)) {
+    finalPayload = formatDiscordPayload(payload);
+    skipSignature = true; // Discord doesn't use our signatures
+  } else {
+    finalPayload = payload;
+  }
+
+  const payloadJson = JSON.stringify(finalPayload);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -56,8 +144,8 @@ export async function deliverWebhook(
     "X-ShellMail-Delivery": logId,
   };
 
-  // Add signature if secret is configured
-  if (webhookSecret) {
+  // Add signature if secret is configured and not Slack/Discord
+  if (webhookSecret && !skipSignature) {
     const signature = await signPayload(payloadJson, webhookSecret);
     headers["X-ShellMail-Signature"] = `sha256=${signature}`;
   }

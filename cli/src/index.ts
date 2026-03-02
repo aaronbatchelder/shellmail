@@ -9,14 +9,26 @@ import chalk from "chalk";
 import ora from "ora";
 import inquirer from "inquirer";
 import { ShellMailAPI } from "./api.js";
-import { loadConfig, saveConfig, clearConfig, getToken } from "./config.js";
+import {
+  loadConfig,
+  saveProfile,
+  clearConfig,
+  getToken,
+  getAddress,
+  getActiveProfile,
+  setActiveProfile,
+  deleteProfile,
+  listProfiles,
+  renameProfile,
+} from "./config.js";
 
 const program = new Command();
 
 program
   .name("shellmail")
   .description("Email for AI agents — create addresses, check mail, extract OTPs")
-  .version("1.0.0");
+  .version("1.2.0")
+  .option("-p, --profile <name>", "Use a specific profile");
 
 // ── Setup Command ────────────────────────────────────────
 
@@ -104,12 +116,10 @@ program
     console.log(chalk.bold("Your API token:"));
     console.log(chalk.yellow(`  ${result.token}\n`));
 
-    // Always save to config
-    saveConfig({
-      token: result.token,
-      address: result.address,
-    });
-    console.log(chalk.green("✓ Token saved to ~/.shellmail/config.json\n"));
+    // Save as a profile
+    const profileName = program.opts().profile || "default";
+    saveProfile(profileName, result.token, result.address);
+    console.log(chalk.green(`✓ Token saved to profile "${profileName}"\n`));
 
     console.log(chalk.gray("⚠️  Save this token somewhere safe! It won't be shown again.\n"));
 
@@ -158,7 +168,8 @@ program
   .option("-u, --unread", "Show only unread emails")
   .option("-n, --limit <number>", "Number of emails to show", "10")
   .action(async (options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -203,7 +214,8 @@ program
   .description("Read a specific email")
   .option("-m, --mark-read", "Mark as read after viewing", true)
   .action(async (id, options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -261,7 +273,8 @@ program
   .option("-w, --wait <seconds>", "Wait for OTP to arrive (max 30s)")
   .option("-f, --from <domain>", "Filter by sender domain")
   .action(async (options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -312,7 +325,8 @@ program
   .option("--otp", "Only show emails with OTP codes")
   .option("-n, --limit <number>", "Number of results", "10")
   .action(async (options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -360,7 +374,8 @@ program
   .option("-s, --set <url>", "Set webhook URL")
   .option("-d, --delete", "Remove webhook configuration")
   .action(async (options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -428,7 +443,8 @@ program
   .option("--html <html>", "HTML body (optional)")
   .option("-r, --reply-to <id>", "Reply to email ID (for threading)")
   .action(async (to, options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -465,7 +481,8 @@ program
   .requiredOption("-b, --body <text>", "Reply body text")
   .option("--html <html>", "HTML body (optional)")
   .action(async (id, options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -511,7 +528,8 @@ program
   .description("List sent emails")
   .option("-n, --limit <number>", "Number of emails to show", "10")
   .action(async (options) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -553,7 +571,8 @@ program
   .command("delete <id>")
   .description("Delete an email")
   .action(async (id) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -578,7 +597,8 @@ program
   .command("archive <id>")
   .description("Archive an email")
   .action(async (id) => {
-    const token = getToken();
+    const profile = getActiveProfile(program.opts().profile);
+    const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
@@ -624,8 +644,10 @@ program
   .command("status")
   .description("Check ShellMail service status and current config")
   .action(async () => {
-    const config = loadConfig();
     const api = new ShellMailAPI();
+    const activeProfile = getActiveProfile(program.opts().profile);
+    const token = getToken(activeProfile);
+    const address = getAddress(activeProfile);
 
     console.log(chalk.bold("\n📧 ShellMail Status\n"));
 
@@ -639,10 +661,11 @@ program
     }
 
     // Show config
-    if (config.token) {
+    console.log(chalk.bold(`Profile: ${activeProfile}`));
+    if (token) {
       console.log(chalk.green("✓ Token: configured"));
-      if (config.address) {
-        console.log(chalk.green(`✓ Address: ${config.address}`));
+      if (address) {
+        console.log(chalk.green(`✓ Address: ${address}`));
       }
     } else if (process.env.SHELLMAIL_TOKEN) {
       console.log(chalk.green("✓ Token: set via SHELLMAIL_TOKEN"));
@@ -652,6 +675,141 @@ program
     }
 
     console.log("");
+  });
+
+// ── Profile Commands ────────────────────────────────────
+
+const profileCmd = program
+  .command("profile")
+  .description("Manage multiple inbox profiles");
+
+profileCmd
+  .command("list")
+  .description("List all profiles")
+  .action(() => {
+    const profiles = listProfiles();
+
+    if (profiles.length === 0) {
+      console.log(chalk.gray("\nNo profiles configured."));
+      console.log(chalk.gray("Run 'shellmail setup' to create one.\n"));
+      return;
+    }
+
+    console.log(chalk.bold("\n📋 Profiles\n"));
+    for (const profile of profiles) {
+      const marker = profile.active ? chalk.green("●") : " ";
+      const name = profile.active ? chalk.bold(profile.name) : profile.name;
+      console.log(`${marker} ${name.padEnd(20)} ${chalk.gray(profile.address)}`);
+    }
+    console.log("");
+  });
+
+profileCmd
+  .command("use <name>")
+  .description("Switch to a different profile")
+  .action((name) => {
+    if (setActiveProfile(name)) {
+      const address = getAddress(name);
+      console.log(chalk.green(`\n✓ Switched to profile "${name}"`));
+      if (address) {
+        console.log(chalk.gray(`  ${address}\n`));
+      }
+    } else {
+      console.error(chalk.red(`\nProfile "${name}" not found.`));
+      console.log(chalk.gray("Run 'shellmail profile list' to see available profiles.\n"));
+      process.exit(1);
+    }
+  });
+
+profileCmd
+  .command("add")
+  .description("Add a new profile (runs setup)")
+  .option("-n, --name <name>", "Profile name", "default")
+  .action(async (options) => {
+    // Reuse setup with profile flag
+    console.log(chalk.bold(`\n📧 Setting up profile "${options.name}"\n`));
+
+    const api = new ShellMailAPI();
+
+    const answers = await inquirer.prompt([
+      {
+        type: "input",
+        name: "recovery",
+        message: "Recovery email (for token recovery):",
+        validate: (input: string) => {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input)) {
+            return "Enter a valid email address";
+          }
+          return true;
+        },
+      },
+      {
+        type: "input",
+        name: "local",
+        message: `Choose your address (or "auto" for random):`,
+        default: "auto",
+      },
+    ]);
+
+    const spinner = ora("Creating address...").start();
+
+    try {
+      const result = await api.createAddress(
+        answers.local === "auto" ? "auto" : answers.local,
+        answers.recovery
+      );
+
+      spinner.succeed(chalk.green("Address created!"));
+
+      saveProfile(options.name, result.token, result.address);
+
+      console.log("\n" + chalk.bold("Address: ") + chalk.cyan(result.address));
+      console.log(chalk.bold("Token: ") + chalk.yellow(result.token));
+      console.log(chalk.green(`\n✓ Saved as profile "${options.name}"\n`));
+    } catch (err) {
+      spinner.fail(chalk.red("Failed to create address"));
+      console.error(chalk.red(`  ${(err as Error).message}\n`));
+      process.exit(1);
+    }
+  });
+
+profileCmd
+  .command("remove <name>")
+  .description("Remove a profile")
+  .action(async (name) => {
+    const profiles = listProfiles();
+    const profile = profiles.find(p => p.name === name);
+
+    if (!profile) {
+      console.error(chalk.red(`\nProfile "${name}" not found.\n`));
+      process.exit(1);
+    }
+
+    const { confirm } = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "confirm",
+        message: `Remove profile "${name}" (${profile.address})?`,
+        default: false,
+      },
+    ]);
+
+    if (confirm) {
+      deleteProfile(name);
+      console.log(chalk.green(`\n✓ Profile "${name}" removed.\n`));
+    }
+  });
+
+profileCmd
+  .command("rename <old> <new>")
+  .description("Rename a profile")
+  .action((oldName, newName) => {
+    if (renameProfile(oldName, newName)) {
+      console.log(chalk.green(`\n✓ Renamed "${oldName}" to "${newName}"\n`));
+    } else {
+      console.error(chalk.red(`\nFailed to rename. Check that "${oldName}" exists and "${newName}" doesn't.\n`));
+      process.exit(1);
+    }
   });
 
 program.parse();

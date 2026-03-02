@@ -68,6 +68,9 @@ No servers. No SMTP. No complexity.
 - **OTP Extraction** — Verification codes are automatically extracted from emails
 - **Long Polling** — Wait up to 30s for an OTP to arrive: `GET /api/mail/otp?timeout=30000`
 - **Webhooks** — Get instant notifications when mail arrives (HMAC-SHA256 signed)
+- **Slack & Discord** — Native webhook formatting for Slack and Discord notifications
+- **Multi-Inbox Profiles** — Manage multiple addresses with `shellmail profile`
+- **TypeScript SDK** — First-class SDK: `npm install @shellmail/sdk`
 - **Search** — Find emails by sender, content, or OTP presence
 - **Rate Limited** — Tiered send limits (Free: 10/day, Shell: 50/day, Reef: 100/day)
 - **Edge-fast** — Runs on Cloudflare Workers globally
@@ -85,7 +88,11 @@ npx shellmail <command>
 ### Commands
 
 ```bash
+# Setup & Status
 shellmail setup              # Create new address interactively
+shellmail status             # Check service status
+
+# Email
 shellmail inbox              # List emails
 shellmail inbox -u           # List unread only
 shellmail read <id>          # Read specific email
@@ -97,9 +104,17 @@ shellmail otp -w 30          # Wait up to 30s for OTP
 shellmail otp -f github.com  # Filter by sender
 shellmail search --otp       # Find emails with OTPs
 shellmail search -q "verify" # Search by keyword
+
+# Webhooks (supports Slack & Discord URLs)
 shellmail webhook -s <url>   # Set webhook URL
 shellmail webhook            # View webhook config
-shellmail status             # Check service status
+
+# Multi-Inbox Profiles
+shellmail profile list       # List all profiles
+shellmail profile use work   # Switch to "work" profile
+shellmail profile add -n work  # Add a new profile
+shellmail profile remove old   # Remove a profile
+shellmail -p work inbox      # Use profile for one command
 ```
 
 ## API
@@ -178,17 +193,61 @@ curl https://shellmail.ai/api/mail/sent \
 ### Configure Webhook
 
 ```bash
+# Custom webhook (HMAC-SHA256 signed)
 curl -X PUT https://shellmail.ai/api/webhook \
   -H "Authorization: Bearer sm_abc123..." \
   -H "Content-Type: application/json" \
   -d '{"url": "https://your-server.com/webhook"}'
+
+# Slack webhook (auto-formatted)
+curl -X PUT https://shellmail.ai/api/webhook \
+  -H "Authorization: Bearer sm_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://hooks.slack.com/services/T.../B.../xxx"}'
+
+# Discord webhook (auto-formatted)
+curl -X PUT https://shellmail.ai/api/webhook \
+  -H "Authorization: Bearer sm_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://discord.com/api/webhooks/123/abc"}'
 ```
 
 Webhooks are signed with HMAC-SHA256. Verify using the `X-ShellMail-Signature` header.
+Slack and Discord URLs are automatically detected and formatted with rich embeds.
 
 ### Full API Reference
 
 See [openapi.json](https://shellmail.ai/openapi.json) or [llms.txt](https://shellmail.ai/llms.txt)
+
+## TypeScript SDK
+
+```bash
+npm install @shellmail/sdk
+```
+
+```typescript
+import { ShellMail } from '@shellmail/sdk';
+
+const mail = new ShellMail({ token: 'sm_...' });
+
+// Check inbox
+const inbox = await mail.inbox();
+
+// Wait for OTP
+const code = await mail.waitForOtp(30, 'github.com');
+
+// Send email
+await mail.send({
+  to: 'user@example.com',
+  subject: 'Hello',
+  bodyText: 'Hi from my agent!',
+});
+
+// Reply to email
+await mail.reply('email-id', 'Thanks for your message!');
+```
+
+See [SDK README](sdk/README.md) for full documentation.
 
 ## OpenClaw Integration
 
