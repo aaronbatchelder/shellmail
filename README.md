@@ -48,10 +48,12 @@ No servers. No SMTP. No complexity.
 
 ## Features
 
+- **Send & Receive** — Full email capability for your agents
 - **OTP Extraction** — Verification codes are automatically extracted from emails
 - **Long Polling** — Wait up to 30s for an OTP to arrive: `GET /api/mail/otp?timeout=30000`
 - **Webhooks** — Get instant notifications when mail arrives (HMAC-SHA256 signed)
 - **Search** — Find emails by sender, content, or OTP presence
+- **Rate Limited** — Tiered send limits (Free: 10/day, Shell: 50/day, Reef: 100/day)
 - **Edge-fast** — Runs on Cloudflare Workers globally
 
 ## CLI
@@ -71,6 +73,9 @@ shellmail setup              # Create new address interactively
 shellmail inbox              # List emails
 shellmail inbox -u           # List unread only
 shellmail read <id>          # Read specific email
+shellmail send <to> -s "Subject" -b "Body"  # Send an email
+shellmail reply <id> -b "Reply text"        # Reply to an email
+shellmail sent               # List sent emails
 shellmail otp                # Get latest OTP code
 shellmail otp -w 30          # Wait up to 30s for OTP
 shellmail otp -f github.com  # Filter by sender
@@ -125,6 +130,35 @@ curl "https://shellmail.ai/api/mail/search?q=verify&has_otp=true" \
   -H "Authorization: Bearer sm_abc123..."
 ```
 
+### Send Email
+
+```bash
+curl -X POST https://shellmail.ai/api/mail/send \
+  -H "Authorization: Bearer sm_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"to": "user@example.com", "subject": "Hello", "body_text": "Hi there!"}'
+```
+
+```json
+{"ok": true, "id": "email-uuid", "message_id": "<timestamp.uuid@shellmail.ai>"}
+```
+
+### Reply to Email (threading)
+
+```bash
+curl -X POST https://shellmail.ai/api/mail/send \
+  -H "Authorization: Bearer sm_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"to": "user@example.com", "subject": "Re: Hello", "body_text": "Thanks!", "reply_to_id": "original-email-id"}'
+```
+
+### List Sent Emails
+
+```bash
+curl https://shellmail.ai/api/mail/sent \
+  -H "Authorization: Bearer sm_abc123..."
+```
+
 ### Configure Webhook
 
 ```bash
@@ -163,11 +197,13 @@ gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN"
 
 ### Usage
 
-Your agent can now check email conversationally:
+Your agent can now handle email conversationally:
 
 - *"Check my email"*
 - *"Get the verification code"*
 - *"Wait for the GitHub OTP"*
+- *"Send an email to user@example.com saying hello"*
+- *"Reply to that email"*
 
 ## Environment Variables
 
@@ -232,11 +268,11 @@ Configure Cloudflare Email Routing to forward to your worker.
 
 What's coming next:
 
-- **Sending** — Send emails from your agent, not just receive
 - **Multi-inbox management** — Switch between inboxes with `--profile work|personal`
 - **Custom domains** — Use `agent@yourdomain.com` instead of `@shellmail.ai`
 - **Storage tiers** — Configurable retention limits and message quotas
 - **Plan management** — Self-service upgrades and billing
+- **Attachments** — Send and receive file attachments
 
 Have a feature request? [Open an issue](https://github.com/aaronbatchelder/shellmail/issues).
 
