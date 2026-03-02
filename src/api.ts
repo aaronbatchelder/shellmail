@@ -3,7 +3,7 @@
  * REST API for managing email addresses and reading inbound mail
  */
 
-import { Env, Address, Email, CreateAddressRequest, RecoverRequest, WebhookConfig } from "./types";
+import { Env, Address, Email, CreateAddressRequest, RecoverRequest, WebhookConfig, SendEmailRequest } from "./types";
 import {
   generateToken,
   generateId,
@@ -13,6 +13,7 @@ import {
   validateLocalPart,
   validateEmail,
 } from "./auth";
+import { sendViaResend, generateMessageId, getSendLimit } from "./send";
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -435,6 +436,146 @@ async function deleteMail(
   return json({ ok: true });
 }
 
+/** POST /api/mail/send — send an email */
+async function sendMail(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  if (!env.RESEND_API_KEY) {
+    return error("Email sending not configured", 503);
+  }
+
+  let body: SendEmailRequest;
+  try {
+    body = await request.json();
+  } catch {
+    return error("Invalid JSON body");
+  }
+
+  // Validate required fields
+  if (!body.to || !validateEmail(body.to)) {
+    return error("Valid 'to' email address required");
+  }
+  if (!body.subject) {
+    return error("'subject' is required");
+  }
+  if (!body.body_text) {
+    return error("'body_text' is required");
+  }
+
+  // Check rate limit
+  const limit = getSendLimit(addr.plan || "free");
+  const allowed = await checkRateLimit(
+    env.DB,
+    `send:${addr.id}`,
+    limit,
+    24 * 60 * 60 * 1000 // 24 hours
+  );
+  if (!allowed) {
+    return error(`Daily send limit reached (${limit}/day for ${addr.plan || "free"} plan)`, 429);
+  }
+
+  // Handle reply threading
+  let replyHeaders: Record<string, string> | undefined;
+
+  if (body.reply_to_id) {
+    const original = await env.DB.prepare(
+      "SELECT from_addr, message_id FROM emails WHERE id = ? AND address_id = ?"
+    )
+      .bind(body.reply_to_id, addr.id)
+      .first<{ from_addr: string; message_id: string | null }>();
+
+    if (!original) {
+      return error("reply_to_id not found", 404);
+    }
+
+    if (original.message_id) {
+      replyHeaders = {
+        "In-Reply-To": original.message_id,
+        "References": original.message_id,
+      };
+    }
+  }
+
+  // Generate Message-ID for this email
+  const messageId = generateMessageId(addr.domain);
+
+  // Send via Resend
+  const fromAddr = `${addr.local_part}@${addr.domain}`;
+  const result = await sendViaResend(env.RESEND_API_KEY, {
+    from: fromAddr,
+    to: body.to,
+    subject: body.subject,
+    text: body.body_text,
+    html: body.body_html,
+    headers: {
+      "Message-ID": messageId,
+      ...replyHeaders,
+    },
+  });
+
+  if (!result.success) {
+    return error(result.error || "Failed to send email", 500);
+  }
+
+  // Store sent email
+  const emailId = generateId();
+  await env.DB.prepare(
+    `INSERT INTO emails (id, address_id, from_addr, to_addr, subject, body_text, body_html, direction, message_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'outbound', ?)`
+  )
+    .bind(
+      emailId,
+      addr.id,
+      fromAddr,
+      body.to,
+      body.subject,
+      body.body_text,
+      body.body_html || null,
+      messageId
+    )
+    .run();
+
+  // Update sent count
+  await env.DB.prepare(
+    "UPDATE addresses SET messages_sent = messages_sent + 1 WHERE id = ?"
+  )
+    .bind(addr.id)
+    .run();
+
+  return json({
+    ok: true,
+    id: emailId,
+    message_id: messageId,
+  }, 201);
+}
+
+/** GET /api/mail/sent — list sent emails */
+async function getSentMail(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+
+  const results = await env.DB.prepare(
+    `SELECT id, to_addr, subject, received_at, message_id
+     FROM emails
+     WHERE address_id = ? AND direction = 'outbound'
+     ORDER BY received_at DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(addr.id, limit, offset)
+    .all<{ id: string; to_addr: string; subject: string; received_at: string; message_id: string }>();
+
+  return json({
+    address: `${addr.local_part}@${addr.domain}`,
+    sent_count: addr.messages_sent || 0,
+    emails: results.results,
+  });
+}
+
 /** GET /api/mail/otp — get latest OTP with optional long-poll wait */
 async function getOtp(request: Request, env: Env): Promise<Response> {
   const addr = await authenticate(request, env.DB);
@@ -683,6 +824,10 @@ function matchRoute(
     return { handler: "deleteWebhook" };
   if (method === "DELETE" && pathname === "/api/addresses/me")
     return { handler: "deleteAddress" };
+  if (method === "POST" && pathname === "/api/mail/send")
+    return { handler: "sendMail" };
+  if (method === "GET" && pathname === "/api/mail/sent")
+    return { handler: "getSentMail" };
 
   // /api/mail/:id routes
   const mailMatch = pathname.match(/^\/api\/mail\/([a-f0-9-]+)$/);
@@ -775,6 +920,12 @@ export default {
           break;
         case "deleteAddress":
           response = await deleteAddress(request, env);
+          break;
+        case "sendMail":
+          response = await sendMail(request, env);
+          break;
+        case "getSentMail":
+          response = await getSentMail(request, env);
           break;
         default:
           response = error("Not found", 404);

@@ -32,6 +32,7 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   bodyText: string | null;
   bodyHtml: string | null;
   rawHeaders: string;
+  messageId: string | null;
 }> {
   const from = message.from;
   const to = message.to;
@@ -84,7 +85,10 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   const fromMatch = from.match(/^"?(.+?)"?\s*<.+>$/);
   const fromName = fromMatch ? fromMatch[1].trim() : null;
 
-  return { from, fromName, to, subject, bodyText, bodyHtml, rawHeaders };
+  // Extract Message-ID
+  const messageId = message.headers.get("message-id") || null;
+
+  return { from, fromName, to, subject, bodyText, bodyHtml, rawHeaders, messageId };
 }
 
 export default {
@@ -129,8 +133,8 @@ export default {
     // Store the email with OTP data and expiration
     const emailId = generateId();
     await env.DB.prepare(
-      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html, raw_headers, otp_code, otp_link, otp_extracted, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html, raw_headers, otp_code, otp_link, otp_extracted, expires_at, message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         emailId,
@@ -144,7 +148,8 @@ export default {
         otp.code,
         otp.link,
         otp.code || otp.link ? 1 : 0,
-        expiresAt
+        expiresAt,
+        parsed.messageId
       )
       .run();
 

@@ -22,3 +22,7 @@ database_id = "8cad35bc-7f39-43f1-a36b-2884a0d24692"
 
 [triggers]
 crons = ["0 3 * * *"] # Daily at 3am UTC
+
+# Secrets (set via `wrangler secret put`):
+# - RESEND_API_KEY: API key from resend.com for outbound email
+# - ADMIN_SECRET: Secret for admin endpoints

@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   DOMAIN: string;
   ADMIN_SECRET?: string;
+  RESEND_API_KEY?: string;
   ctx?: ExecutionContext;
 }
 
@@ -18,6 +19,7 @@ export interface Address {
   webhook_secret: string | null;
   plan: string;
   messages_received: number;
+  messages_sent: number;
   last_activity_at: string | null;
 }
 
@@ -26,6 +28,7 @@ export interface Email {
   address_id: string;
   from_addr: string;
   from_name: string | null;
+  to_addr: string | null;
   subject: string | null;
   body_text: string | null;
   body_html: string | null;
@@ -36,6 +39,8 @@ export interface Email {
   otp_link: string | null;
   otp_extracted: number;
   expires_at: string | null;
+  direction: string;
+  message_id: string | null;
 }
 
 export interface CreateAddressRequest {
@@ -51,4 +56,12 @@ export interface RecoverRequest {
 export interface WebhookConfig {
   url: string;
   secret?: string;
+}
+
+export interface SendEmailRequest {
+  to: string;
+  subject: string;
+  body_text: string;
+  body_html?: string;
+  reply_to_id?: string;
 }
