@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "ShellMail API",
-    "description": "Email for AI agents. Create inboxes, receive mail, extract OTPs.",
-    "version": "1.0.0",
+    "description": "Email for AI agents. Send and receive mail, extract OTPs automatically.",
+    "version": "1.1.0",
     "contact": {
       "url": "https://shellmail.ai"
     }
@@ -164,6 +164,112 @@
                     "subject": { "type": "string" },
                     "email_id": { "type": "string" },
                     "received_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/send": {
+      "post": {
+        "operationId": "sendEmail",
+        "summary": "Send an email",
+        "description": "Send an email from your ShellMail address. Rate limited by plan (Free: 10/day, Shell: 50/day, Reef: 100/day).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["to", "subject", "body_text"],
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Recipient email address",
+                    "example": "user@example.com"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "Email subject",
+                    "example": "Hello from my agent"
+                  },
+                  "body_text": {
+                    "type": "string",
+                    "description": "Plain text body",
+                    "example": "Hi there!"
+                  },
+                  "body_html": {
+                    "type": "string",
+                    "description": "HTML body (optional)",
+                    "example": "<p>Hi there!</p>"
+                  },
+                  "reply_to_id": {
+                    "type": "string",
+                    "description": "ID of email to reply to (for threading)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Email sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "id": { "type": "string", "description": "ID of stored sent email" },
+                    "message_id": { "type": "string", "description": "RFC 5322 Message-ID" }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Daily send limit reached"
+          },
+          "503": {
+            "description": "Email sending not configured"
+          }
+        }
+      }
+    },
+    "/api/mail/sent": {
+      "get": {
+        "operationId": "listSentEmails",
+        "summary": "List sent emails",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sent email list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": { "type": "string" },
+                    "sent_count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SentEmailSummary" }
+                    }
                   }
                 }
               }
@@ -474,6 +580,16 @@
           "is_read": { "type": "boolean" },
           "is_archived": { "type": "boolean" },
           "expires_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "SentEmailSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "to_addr": { "type": "string" },
+          "subject": { "type": "string" },
+          "received_at": { "type": "string", "format": "date-time" },
+          "message_id": { "type": "string" }
         }
       }
     }
