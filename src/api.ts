@@ -477,22 +477,30 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
 
   // Handle reply threading
   let replyHeaders: Record<string, string> | undefined;
+  let threadId: string | null = null;
 
   if (body.reply_to_id) {
     const original = await env.DB.prepare(
-      "SELECT from_addr, message_id FROM emails WHERE id = ? AND address_id = ?"
+      "SELECT from_addr, message_id, thread_id, references_header FROM emails WHERE id = ? AND address_id = ?"
     )
       .bind(body.reply_to_id, addr.id)
-      .first<{ from_addr: string; message_id: string | null }>();
+      .first<{ from_addr: string; message_id: string | null; thread_id: string | null; references_header: string | null }>();
 
     if (!original) {
       return error("reply_to_id not found", 404);
     }
 
+    // Use existing thread_id or start one from the original message_id
+    threadId = original.thread_id || original.message_id;
+
     if (original.message_id) {
+      // Build References header: existing references + original message_id
+      const existingRefs = original.references_header || "";
+      const allRefs = existingRefs ? `${existingRefs} ${original.message_id}` : original.message_id;
+
       replyHeaders = {
         "In-Reply-To": original.message_id,
-        "References": original.message_id,
+        "References": allRefs,
       };
     }
   }
@@ -520,9 +528,12 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
 
   // Store sent email
   const emailId = generateId();
+  // If no threadId yet, use this message's ID as the thread
+  const finalThreadId = threadId || messageId;
+
   await env.DB.prepare(
-    `INSERT INTO emails (id, address_id, from_addr, to_addr, subject, body_text, body_html, direction, message_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'outbound', ?)`
+    `INSERT INTO emails (id, address_id, from_addr, to_addr, subject, body_text, body_html, direction, message_id, thread_id, in_reply_to, references_header)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'outbound', ?, ?, ?, ?)`
   )
     .bind(
       emailId,
@@ -532,7 +543,10 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
       body.subject,
       body.body_text,
       body.body_html || null,
-      messageId
+      messageId,
+      finalThreadId,
+      replyHeaders?.["In-Reply-To"] || null,
+      replyHeaders?.["References"] || null
     )
     .run();
 
@@ -644,6 +658,143 @@ async function getOtp(request: Request, env: Env): Promise<Response> {
     // Wait 1 second before polling again
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
+}
+
+/** GET /api/mail/threads — list email threads */
+async function listThreads(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+
+  // Get latest email per thread
+  const threads = await env.DB.prepare(`
+    SELECT
+      thread_id,
+      MAX(received_at) as last_message_at,
+      COUNT(*) as message_count,
+      SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread_count
+    FROM emails
+    WHERE address_id = ? AND thread_id IS NOT NULL AND is_archived = 0
+    GROUP BY thread_id
+    ORDER BY last_message_at DESC
+    LIMIT ? OFFSET ?
+  `)
+    .bind(addr.id, limit, offset)
+    .all<{
+      thread_id: string;
+      last_message_at: string;
+      message_count: number;
+      unread_count: number;
+    }>();
+
+  // Get preview for each thread (latest message)
+  const threadPreviews = await Promise.all(
+    (threads.results || []).map(async (t) => {
+      const latest = await env.DB.prepare(`
+        SELECT id, from_addr, from_name, to_addr, subject, direction, received_at
+        FROM emails
+        WHERE address_id = ? AND thread_id = ?
+        ORDER BY received_at DESC
+        LIMIT 1
+      `)
+        .bind(addr.id, t.thread_id)
+        .first<{
+          id: string;
+          from_addr: string;
+          from_name: string | null;
+          to_addr: string | null;
+          subject: string;
+          direction: string;
+          received_at: string;
+        }>();
+
+      return {
+        thread_id: t.thread_id,
+        subject: latest?.subject || "(no subject)",
+        last_message: {
+          id: latest?.id,
+          from_addr: latest?.from_addr,
+          from_name: latest?.from_name,
+          to_addr: latest?.to_addr,
+          direction: latest?.direction,
+          received_at: latest?.received_at,
+        },
+        message_count: t.message_count,
+        unread_count: t.unread_count,
+        last_message_at: t.last_message_at,
+      };
+    })
+  );
+
+  return json({
+    threads: threadPreviews,
+    count: threadPreviews.length,
+  });
+}
+
+/** GET /api/mail/threads/:id — get all emails in a thread */
+async function getThread(
+  request: Request,
+  env: Env,
+  threadId: string
+): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  const emails = await env.DB.prepare(`
+    SELECT id, from_addr, from_name, to_addr, subject, body_text, body_html,
+           direction, received_at, is_read, message_id
+    FROM emails
+    WHERE address_id = ? AND thread_id = ?
+    ORDER BY received_at ASC
+  `)
+    .bind(addr.id, threadId)
+    .all<{
+      id: string;
+      from_addr: string;
+      from_name: string | null;
+      to_addr: string | null;
+      subject: string;
+      body_text: string | null;
+      body_html: string | null;
+      direction: string;
+      received_at: string;
+      is_read: number;
+      message_id: string | null;
+    }>();
+
+  if (!emails.results?.length) {
+    return error("Thread not found", 404);
+  }
+
+  // Mark all as read
+  await env.DB.prepare(
+    "UPDATE emails SET is_read = 1 WHERE address_id = ? AND thread_id = ?"
+  )
+    .bind(addr.id, threadId)
+    .run();
+
+  return json({
+    thread_id: threadId,
+    subject: emails.results[0]?.subject || "(no subject)",
+    messages: emails.results.map((e) => ({
+      id: e.id,
+      from_addr: e.from_addr,
+      from_name: e.from_name,
+      to_addr: e.to_addr,
+      subject: e.subject,
+      body_text: e.body_text,
+      body_html: e.body_html,
+      direction: e.direction,
+      received_at: e.received_at,
+      is_read: !!e.is_read,
+      message_id: e.message_id,
+    })),
+    message_count: emails.results.length,
+  });
 }
 
 /** GET /api/mail/search — search emails by query */
@@ -816,6 +967,8 @@ function matchRoute(
     return { handler: "getOtp" };
   if (method === "GET" && pathname === "/api/mail/search")
     return { handler: "searchMail" };
+  if (method === "GET" && pathname === "/api/mail/threads")
+    return { handler: "listThreads" };
   if (method === "GET" && pathname === "/api/webhook")
     return { handler: "getWebhook" };
   if (method === "PUT" && pathname === "/api/webhook")
@@ -828,6 +981,12 @@ function matchRoute(
     return { handler: "sendMail" };
   if (method === "GET" && pathname === "/api/mail/sent")
     return { handler: "getSentMail" };
+
+  // /api/mail/threads/:id route (must come before generic /api/mail/:id)
+  const threadMatch = pathname.match(/^\/api\/mail\/threads\/([a-f0-9-]+)$/);
+  if (threadMatch && method === "GET") {
+    return { handler: "getThread", params: { id: threadMatch[1] } };
+  }
 
   // /api/mail/:id routes
   const mailMatch = pathname.match(/^\/api\/mail\/([a-f0-9-]+)$/);
@@ -899,6 +1058,12 @@ export default {
           break;
         case "searchMail":
           response = await searchMail(request, env);
+          break;
+        case "listThreads":
+          response = await listThreads(request, env);
+          break;
+        case "getThread":
+          response = await getThread(request, env, route.params!.id);
           break;
         case "getWebhook":
           response = await getWebhook(request, env);

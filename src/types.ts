@@ -41,6 +41,9 @@ export interface Email {
   expires_at: string | null;
   direction: string;
   message_id: string | null;
+  thread_id: string | null;
+  in_reply_to: string | null;
+  references_header: string | null;
 }
 
 export interface CreateAddressRequest {

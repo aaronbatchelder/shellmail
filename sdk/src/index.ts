@@ -111,6 +111,48 @@ export interface HealthResponse {
   domain: string;
 }
 
+export interface ThreadSummary {
+  thread_id: string;
+  subject: string;
+  last_message: {
+    id: string;
+    from_addr: string;
+    from_name: string | null;
+    to_addr: string | null;
+    direction: string;
+    received_at: string;
+  };
+  message_count: number;
+  unread_count: number;
+  last_message_at: string;
+}
+
+export interface ThreadsResponse {
+  threads: ThreadSummary[];
+  count: number;
+}
+
+export interface ThreadMessage {
+  id: string;
+  from_addr: string;
+  from_name: string | null;
+  to_addr: string | null;
+  subject: string;
+  body_text: string | null;
+  body_html: string | null;
+  direction: string;
+  received_at: string;
+  is_read: boolean;
+  message_id: string | null;
+}
+
+export interface ThreadResponse {
+  thread_id: string;
+  subject: string;
+  messages: ThreadMessage[];
+  message_count: number;
+}
+
 // ── Errors ───────────────────────────────────────────────
 
 export class ShellMailError extends Error {
@@ -220,6 +262,31 @@ export class ShellMail {
    */
   async deleteEmail(emailId: string): Promise<{ ok: boolean }> {
     return this.request("DELETE", `/api/mail/${emailId}`);
+  }
+
+  // ── Threads ──────────────────────────────────────────
+
+  /**
+   * List email threads (conversations)
+   * @param options.limit - Max threads to return (default: 20, max: 100)
+   * @param options.offset - Pagination offset
+   */
+  async threads(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<ThreadsResponse> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.offset) params.set("offset", String(options.offset));
+    return this.request<ThreadsResponse>("GET", `/api/mail/threads?${params}`);
+  }
+
+  /**
+   * Get all messages in a thread
+   * @param threadId - The thread ID
+   */
+  async getThread(threadId: string): Promise<ThreadResponse> {
+    return this.request<ThreadResponse>("GET", `/api/mail/threads/${threadId}`);
   }
 
   // ── OTP ──────────────────────────────────────────────

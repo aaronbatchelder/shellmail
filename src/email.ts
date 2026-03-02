@@ -33,6 +33,8 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   bodyHtml: string | null;
   rawHeaders: string;
   messageId: string | null;
+  inReplyTo: string | null;
+  references: string | null;
 }> {
   const from = message.from;
   const to = message.to;
@@ -85,10 +87,12 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
   const fromMatch = from.match(/^"?(.+?)"?\s*<.+>$/);
   const fromName = fromMatch ? fromMatch[1].trim() : null;
 
-  // Extract Message-ID
+  // Extract Message-ID and threading headers
   const messageId = message.headers.get("message-id") || null;
+  const inReplyTo = message.headers.get("in-reply-to") || null;
+  const references = message.headers.get("references") || null;
 
-  return { from, fromName, to, subject, bodyText, bodyHtml, rawHeaders, messageId };
+  return { from, fromName, to, subject, bodyText, bodyHtml, rawHeaders, messageId, inReplyTo, references };
 }
 
 export default {
@@ -130,11 +134,40 @@ export default {
     // Calculate expiration based on plan
     const expiresAt = calculateExpiresAt(addr.plan || 'free');
 
+    // Determine thread_id from In-Reply-To or References headers
+    let threadId: string | null = null;
+
+    if (parsed.inReplyTo || parsed.references) {
+      // Look for existing thread with this message ID
+      const referencedIds = [
+        parsed.inReplyTo,
+        ...(parsed.references?.split(/\s+/) || [])
+      ].filter(Boolean);
+
+      for (const refId of referencedIds) {
+        const existing = await env.DB.prepare(
+          "SELECT thread_id, message_id FROM emails WHERE address_id = ? AND (message_id = ? OR thread_id = ?)"
+        )
+          .bind(addr.id, refId, refId)
+          .first<{ thread_id: string | null; message_id: string | null }>();
+
+        if (existing) {
+          threadId = existing.thread_id || existing.message_id;
+          break;
+        }
+      }
+    }
+
+    // If no existing thread found but this email has a message_id, it becomes its own thread
+    if (!threadId && parsed.messageId) {
+      threadId = parsed.messageId;
+    }
+
     // Store the email with OTP data and expiration
     const emailId = generateId();
     await env.DB.prepare(
-      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html, raw_headers, otp_code, otp_link, otp_extracted, expires_at, message_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO emails (id, address_id, from_addr, from_name, subject, body_text, body_html, raw_headers, otp_code, otp_link, otp_extracted, expires_at, message_id, thread_id, in_reply_to, references_header)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         emailId,
@@ -149,7 +182,10 @@ export default {
         otp.link,
         otp.code || otp.link ? 1 : 0,
         expiresAt,
-        parsed.messageId
+        parsed.messageId,
+        threadId,
+        parsed.inReplyTo,
+        parsed.references
       )
       .run();
 

@@ -36,7 +36,7 @@ Add to your MCP config (e.g., claude_desktop_config.json):
 }
 ```
 
-Available tools: shellmail_inbox, shellmail_read, shellmail_otp, shellmail_send, shellmail_search, shellmail_sent, shellmail_delete, shellmail_mark_read
+Available tools: shellmail_inbox, shellmail_read, shellmail_otp, shellmail_send, shellmail_search, shellmail_sent, shellmail_delete, shellmail_mark_read, shellmail_threads, shellmail_thread
 
 ## API Base URL
 
@@ -94,6 +94,15 @@ GET /api/mail/sent
 Query params: limit=50, offset=0
 Returns: {"address": "...", "sent_count": 5, "emails": [...]}
 
+### List Threads (conversations)
+GET /api/mail/threads
+Query params: limit=20, offset=0
+Returns: {"threads": [...], "count": 5}
+
+### Get Thread (all messages in a conversation)
+GET /api/mail/threads/:id
+Returns: {"thread_id": "...", "subject": "...", "messages": [...], "message_count": 3}
+
 ### Configure Webhook
 PUT /api/webhook
 Body: {"url": "https://your-server.com/webhook"}
@@ -122,6 +131,7 @@ DELETE /api/addresses/me
 - **TypeScript SDK**: `npm install @shellmail/sdk` for first-class TypeScript support
 - **Multi-Inbox Profiles**: Manage multiple addresses with CLI profiles
 - **Reply Threading**: Use reply_to_id to maintain email threads
+- **Thread View**: List and view email conversations grouped by thread
 - **Ephemeral**: Messages auto-delete after 7 days (free tier)
 - **Edge-fast**: Runs on Cloudflare Workers globally
 
@@ -138,6 +148,8 @@ const mail = new ShellMail({ token: 'sm_...' });
 const inbox = await mail.inbox();
 const code = await mail.waitForOtp(30, 'github.com');
 await mail.send({ to: 'user@example.com', subject: 'Hello', bodyText: 'Hi!' });
+const threads = await mail.threads();
+const thread = await mail.getThread('thread-id');
 ```
 
 ## Slack & Discord Webhooks

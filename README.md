@@ -72,6 +72,7 @@ No servers. No SMTP. No complexity.
 - **Multi-Inbox Profiles** — Manage multiple addresses with `shellmail profile`
 - **TypeScript SDK** — First-class SDK: `npm install @shellmail/sdk`
 - **Search** — Find emails by sender, content, or OTP presence
+- **Threads** — View conversations grouped by thread
 - **Rate Limited** — Tiered send limits (Free: 10/day, Shell: 50/day, Reef: 100/day)
 - **Edge-fast** — Runs on Cloudflare Workers globally
 
@@ -190,6 +191,20 @@ curl https://shellmail.ai/api/mail/sent \
   -H "Authorization: Bearer sm_abc123..."
 ```
 
+### List Threads (conversations)
+
+```bash
+curl https://shellmail.ai/api/mail/threads \
+  -H "Authorization: Bearer sm_abc123..."
+```
+
+### Get Thread (all messages)
+
+```bash
+curl https://shellmail.ai/api/mail/threads/{thread_id} \
+  -H "Authorization: Bearer sm_abc123..."
+```
+
 ### Configure Webhook
 
 ```bash
@@ -245,6 +260,10 @@ await mail.send({
 
 // Reply to email
 await mail.reply('email-id', 'Thanks for your message!');
+
+// View threads (conversations)
+const threads = await mail.threads();
+const thread = await mail.getThread('thread-id');
 ```
 
 See [SDK README](sdk/README.md) for full documentation.

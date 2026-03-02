@@ -3,7 +3,7 @@
   "info": {
     "title": "ShellMail API",
     "description": "Email for AI agents. Send and receive mail, extract OTPs automatically.",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "contact": {
       "url": "https://shellmail.ai"
     }
@@ -328,6 +328,71 @@
         }
       }
     },
+    "/api/mail/threads": {
+      "get": {
+        "operationId": "listThreads",
+        "summary": "List email threads (conversations)",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of threads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "threads": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ThreadSummary" }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/threads/{id}": {
+      "get": {
+        "operationId": "getThread",
+        "summary": "Get all messages in a thread",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Thread ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread with all messages",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Thread" }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found"
+          }
+        }
+      }
+    },
     "/api/mail/{id}": {
       "get": {
         "operationId": "getEmail",
@@ -590,6 +655,54 @@
           "subject": { "type": "string" },
           "received_at": { "type": "string", "format": "date-time" },
           "message_id": { "type": "string" }
+        }
+      },
+      "ThreadSummary": {
+        "type": "object",
+        "properties": {
+          "thread_id": { "type": "string" },
+          "subject": { "type": "string" },
+          "last_message": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "from_addr": { "type": "string" },
+              "from_name": { "type": "string", "nullable": true },
+              "to_addr": { "type": "string", "nullable": true },
+              "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+              "received_at": { "type": "string", "format": "date-time" }
+            }
+          },
+          "message_count": { "type": "integer" },
+          "unread_count": { "type": "integer" },
+          "last_message_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Thread": {
+        "type": "object",
+        "properties": {
+          "thread_id": { "type": "string" },
+          "subject": { "type": "string" },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "from_addr": { "type": "string" },
+                "from_name": { "type": "string", "nullable": true },
+                "to_addr": { "type": "string", "nullable": true },
+                "subject": { "type": "string" },
+                "body_text": { "type": "string", "nullable": true },
+                "body_html": { "type": "string", "nullable": true },
+                "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+                "received_at": { "type": "string", "format": "date-time" },
+                "is_read": { "type": "boolean" },
+                "message_id": { "type": "string", "nullable": true }
+              }
+            }
+          },
+          "message_count": { "type": "integer" }
         }
       }
     }

@@ -212,6 +212,36 @@ const TOOLS: Tool[] = [
       required: ["email_id"],
     },
   },
+  {
+    name: "shellmail_threads",
+    description:
+      "List email threads (conversations). Shows grouped conversations with message count and unread status.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Maximum number of threads to return (default: 20, max: 100)",
+          default: 20,
+        },
+      },
+    },
+  },
+  {
+    name: "shellmail_thread",
+    description:
+      "Get all messages in a specific thread. Returns the full conversation in chronological order.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        thread_id: {
+          type: "string",
+          description: "The ID of the thread to retrieve",
+        },
+      },
+      required: ["thread_id"],
+    },
+  },
 ];
 
 // Tool handlers
@@ -279,6 +309,16 @@ async function handleTool(
     case "shellmail_mark_read": {
       if (!args.email_id) throw new Error("email_id is required");
       return apiRequest("PATCH", `/api/mail/${args.email_id}`, { is_read: true });
+    }
+
+    case "shellmail_threads": {
+      const limit = args.limit || 20;
+      return apiRequest("GET", `/api/mail/threads?limit=${limit}`);
+    }
+
+    case "shellmail_thread": {
+      if (!args.thread_id) throw new Error("thread_id is required");
+      return apiRequest("GET", `/api/mail/threads/${args.thread_id}`);
     }
 
     default:
