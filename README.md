@@ -26,13 +26,29 @@
 npx shellmail setup
 ```
 
-**For OpenClaw users** — Install the skill, then your agent can check email conversationally:
+**For Claude Desktop / Cursor / Cline** — Add the MCP server:
+
+```json
+{
+  "mcpServers": {
+    "shellmail": {
+      "command": "npx",
+      "args": ["-y", "shellmail-mcp"],
+      "env": {
+        "SHELLMAIL_TOKEN": "sm_your_token_here"
+      }
+    }
+  }
+}
+```
+
+**For OpenClaw users** — Install the skill:
 
 ```bash
 clawhub install shellmail
 ```
 
-That's it. You now have `yourname@shellmail.ai` ready to receive mail.
+That's it. You now have `yourname@shellmail.ai` ready to send and receive mail.
 
 ## Why ShellMail?
 
@@ -280,7 +296,8 @@ Have a feature request? [Open an issue](https://github.com/aaronbatchelder/shell
 
 - [shellmail.ai](https://shellmail.ai) — Website & docs
 - [ClawHub](https://clawhub.ai/aaronbatchelder/shellmail) — OpenClaw skill
-- [npm](https://www.npmjs.com/package/shellmail) — CLI package
+- [npm: shellmail](https://www.npmjs.com/package/shellmail) — CLI package
+- [npm: shellmail-mcp](https://www.npmjs.com/package/shellmail-mcp) — MCP server
 - [OpenAPI](https://shellmail.ai/openapi.json) — API specification
 - [llms.txt](https://shellmail.ai/llms.txt) — LLM-friendly docs
 

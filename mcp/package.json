@@ -1,0 +1,43 @@
+{
+  "name": "shellmail-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for ShellMail - Email for AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "shellmail-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "email",
+    "ai",
+    "agents",
+    "shellmail",
+    "claude",
+    "model-context-protocol"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aaronbatchelder/shellmail"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist"
+  ]
+}
