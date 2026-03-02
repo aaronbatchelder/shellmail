@@ -57,6 +57,34 @@ export interface WebhookSetResponse {
   note: string;
 }
 
+export interface SendEmailRequest {
+  to: string;
+  subject: string;
+  body_text: string;
+  body_html?: string;
+  reply_to_id?: string;
+}
+
+export interface SendEmailResponse {
+  ok: boolean;
+  id: string;
+  message_id: string;
+}
+
+export interface SentEmailSummary {
+  id: string;
+  to_addr: string;
+  subject: string;
+  received_at: string;
+  message_id: string;
+}
+
+export interface SentResponse {
+  address: string;
+  sent_count: number;
+  emails: SentEmailSummary[];
+}
+
 export class ShellMailAPI {
   private token: string | null;
 
@@ -174,5 +202,13 @@ export class ShellMailAPI {
 
   async health(): Promise<{ service: string; status: string; domain: string }> {
     return this.request("GET", "/health", undefined, false);
+  }
+
+  async send(options: SendEmailRequest): Promise<SendEmailResponse> {
+    return this.request<SendEmailResponse>("POST", "/api/mail/send", options);
+  }
+
+  async sent(limit = 20): Promise<SentResponse> {
+    return this.request<SentResponse>("GET", `/api/mail/sent?limit=${limit}`);
   }
 }

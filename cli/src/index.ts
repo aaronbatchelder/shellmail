@@ -121,6 +121,7 @@ program
 
     console.log(chalk.bold("Commands\n"));
     console.log(`  ${chalk.cyan("shellmail inbox")}      Check your inbox`);
+    console.log(`  ${chalk.cyan("shellmail send <to>")}  Send an email`);
     console.log(`  ${chalk.cyan("shellmail otp -w 30")}  Wait for an OTP code`);
     console.log(`  ${chalk.cyan("shellmail read <id>")} Read an email`);
     console.log(`  ${chalk.cyan("shellmail status")}     Verify setup\n`);
@@ -389,6 +390,135 @@ program
       }
     } catch (err) {
       spinner.fail(chalk.red("Failed to fetch webhook config"));
+      console.error(chalk.red(`  ${(err as Error).message}\n`));
+      process.exit(1);
+    }
+  });
+
+// ── Send Command ────────────────────────────────────────
+
+program
+  .command("send <to>")
+  .description("Send an email")
+  .requiredOption("-s, --subject <subject>", "Email subject")
+  .requiredOption("-b, --body <text>", "Email body text")
+  .option("--html <html>", "HTML body (optional)")
+  .option("-r, --reply-to <id>", "Reply to email ID (for threading)")
+  .action(async (to, options) => {
+    const token = getToken();
+    if (!token) {
+      console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
+      process.exit(1);
+    }
+
+    const spinner = ora("Sending email...").start();
+
+    try {
+      const api = new ShellMailAPI(token);
+      const result = await api.send({
+        to,
+        subject: options.subject,
+        body_text: options.body,
+        body_html: options.html,
+        reply_to_id: options.replyTo,
+      });
+
+      spinner.succeed(chalk.green("Email sent!"));
+      console.log("\n" + chalk.bold("To: ") + to);
+      console.log(chalk.bold("Subject: ") + options.subject);
+      console.log(chalk.gray(`Message ID: ${result.message_id}\n`));
+    } catch (err) {
+      spinner.fail(chalk.red("Failed to send email"));
+      console.error(chalk.red(`  ${(err as Error).message}\n`));
+      process.exit(1);
+    }
+  });
+
+// ── Reply Command ───────────────────────────────────────
+
+program
+  .command("reply <id>")
+  .description("Reply to an email")
+  .requiredOption("-b, --body <text>", "Reply body text")
+  .option("--html <html>", "HTML body (optional)")
+  .action(async (id, options) => {
+    const token = getToken();
+    if (!token) {
+      console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
+      process.exit(1);
+    }
+
+    const spinner = ora("Fetching original email...").start();
+
+    try {
+      const api = new ShellMailAPI(token);
+
+      // Get original email
+      const original = await api.read(id);
+      const to = original.from_addr;
+      const subject = original.subject?.startsWith("Re:")
+        ? original.subject
+        : `Re: ${original.subject || "(no subject)"}`;
+
+      spinner.text = "Sending reply...";
+
+      const result = await api.send({
+        to,
+        subject,
+        body_text: options.body,
+        body_html: options.html,
+        reply_to_id: id,
+      });
+
+      spinner.succeed(chalk.green("Reply sent!"));
+      console.log("\n" + chalk.bold("To: ") + to);
+      console.log(chalk.bold("Subject: ") + subject);
+      console.log(chalk.gray(`Message ID: ${result.message_id}\n`));
+    } catch (err) {
+      spinner.fail(chalk.red("Failed to send reply"));
+      console.error(chalk.red(`  ${(err as Error).message}\n`));
+      process.exit(1);
+    }
+  });
+
+// ── Sent Command ────────────────────────────────────────
+
+program
+  .command("sent")
+  .description("List sent emails")
+  .option("-n, --limit <number>", "Number of emails to show", "10")
+  .action(async (options) => {
+    const token = getToken();
+    if (!token) {
+      console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
+      process.exit(1);
+    }
+
+    const spinner = ora("Fetching sent emails...").start();
+
+    try {
+      const api = new ShellMailAPI(token);
+      const result = await api.sent(parseInt(options.limit));
+
+      spinner.stop();
+
+      console.log(chalk.bold(`\n📤 ${result.address}`));
+      console.log(chalk.gray(`   ${result.sent_count} sent\n`));
+
+      if (result.emails.length === 0) {
+        console.log(chalk.gray("   No sent emails.\n"));
+        return;
+      }
+
+      for (const email of result.emails) {
+        const to = email.to_addr;
+        const date = new Date(email.received_at).toLocaleString();
+
+        console.log(`  ${chalk.bold(to.slice(0, 30).padEnd(30))} ${email.subject?.slice(0, 35) || "(no subject)"}`);
+        console.log(chalk.gray(`  ${email.id}  ${date}\n`));
+      }
+    } catch (err) {
+      spinner.fail(chalk.red("Failed to fetch sent emails"));
       console.error(chalk.red(`  ${(err as Error).message}\n`));
       process.exit(1);
     }
