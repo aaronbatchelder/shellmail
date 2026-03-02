@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ShellMail — Email for AI agents</title>
-  <meta name="description" content="Give your AI agent a real email address. Receive, read, and extract OTPs via a simple REST API. Chill.">
+  <meta name="description" content="Give your AI agent a real email address. Send and receive email, extract OTPs automatically via a simple REST API.">
   <meta name="theme-color" content="#faf6f1">
   <meta property="og:title" content="ShellMail — Email for AI agents">
-  <meta property="og:description" content="Give your AI agent a real email address. Receive, read, and extract OTPs via a simple REST API.">
+  <meta property="og:description" content="Give your AI agent a real email address. Send and receive email, extract OTPs automatically.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shellmail.ai">
   <meta property="og:image" content="https://shellmail.ai/logo.png">
@@ -569,7 +569,7 @@
   <div class="container">
     <img src="/logo.png" alt="ShellMail" class="hero-logo">
     <h1>Email for <span>AI agents</span></h1>
-    <p>Give your OpenClaw or AI agent an inbox in under 60 seconds.<br>No servers. No config. Just email that works.</p>
+    <p>Give your OpenClaw or AI agent full email in under 60 seconds.<br>Send and receive. No servers. No config. Just works.</p>
     <div class="hero-actions">
       <a href="#cli" class="btn btn-primary">Get Started Free</a>
       <a href="#features" class="btn btn-secondary">See Features</a>
@@ -585,13 +585,13 @@
   <div class="container">
     <div class="bento-header fade-in">
       <h2>Everything your agent needs</h2>
-      <p>One curl command. One token. Zero mail servers. Your agent has email in under a minute.</p>
+      <p>One curl command. One token. Zero mail servers. Send and receive email in under a minute.</p>
     </div>
     <div class="bento-grid">
       <div class="bento-card large fade-in">
         <div class="bento-icon coral">📧</div>
-        <h3>Instant Email Addresses</h3>
-        <p>Create addresses on-demand at <code>anything@shellmail.ai</code>. Each gets its own inbox with token auth. Spin up disposable addresses or keep persistent ones for your agents.</p>
+        <h3>Send & Receive Email</h3>
+        <p>Create addresses at <code>anything@shellmail.ai</code>. Send emails, receive replies, extract OTPs. Full email capability with tiered rate limits (Free: 10/day, Shell: 50/day, Reef: 100/day).</p>
       </div>
       <div class="bento-card fade-in">
         <div class="bento-icon ocean">🔑</div>
@@ -676,15 +676,18 @@
   <span class="key">"token"</span>: <span class="string">"sm_a1b2c3d4..."</span>
 }</span>
 
+<span class="comment"># Send an email</span>
+<span class="prompt">$</span> <span class="cmd">curl -X POST https://shellmail.ai/api/mail/send \</span>
+<span class="cmd">    -H <span class="string">"Authorization: Bearer sm_a1b2c3d4..."</span> \</span>
+<span class="cmd">    -d <span class="string">'{"to":"user@example.com","subject":"Hello","body_text":"Hi!"}'</span></span>
+
+<span class="response">{<span class="key">"ok"</span>: true, <span class="key">"id"</span>: <span class="string">"abc123"</span>}</span>
+
 <span class="comment"># Get latest OTP (with 30s wait)</span>
 <span class="prompt">$</span> <span class="cmd">curl "https://shellmail.ai/api/mail/otp?timeout=30000" \</span>
 <span class="cmd">    -H <span class="string">"Authorization: Bearer sm_a1b2c3d4..."</span></span>
 
-<span class="response">{
-  <span class="key">"found"</span>: true,
-  <span class="key">"code"</span>: <span class="string">"847293"</span>,
-  <span class="key">"from"</span>: <span class="string">"noreply@github.com"</span>
-}</span>
+<span class="response">{<span class="key">"found"</span>: true, <span class="key">"code"</span>: <span class="string">"847293"</span>}</span>
         </div>
       </div>
     </div>
@@ -795,14 +798,15 @@
         </div>
         <div class="terminal-body">
 <span class="prompt">$</span> <span class="cmd">shellmail inbox</span>
-<span class="response">
-📬 my-agent@shellmail.ai (2 unread)
-
+<span class="response">📬 my-agent@shellmail.ai (2 unread)
 ● GitHub      Your verification code is 847293
-● Stripe      Payment received for $49.00
-</span>
+● Stripe      Payment received for $49.00</span>
+
 <span class="prompt">$</span> <span class="cmd">shellmail otp</span>
 <span class="response">✔ OTP found: <span style="color: var(--golden);">847293</span></span>
+
+<span class="prompt">$</span> <span class="cmd">shellmail send user@example.com -s "Hello" -b "Hi!"</span>
+<span class="response">✔ Email sent to user@example.com</span>
         </div>
       </div>
     </div>
