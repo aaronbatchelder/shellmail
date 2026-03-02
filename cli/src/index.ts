@@ -113,11 +113,34 @@ program
 
     console.log(chalk.gray("⚠️  Save this token somewhere safe! It won't be shown again.\n"));
 
+    // Send test email to prove it works
+    const { sendTest } = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "sendTest",
+        message: "Send a test email to yourself to verify everything works?",
+        default: true,
+      },
+    ]);
+
+    if (sendTest) {
+      const testSpinner = ora("Sending test email...").start();
+      try {
+        const testApi = new ShellMailAPI(result.token);
+        await testApi.send({
+          to: recoveryEmail,
+          subject: `Welcome to ShellMail - ${result.address}`,
+          body_text: `Your ShellMail address is ready!\n\nAddress: ${result.address}\n\nYou can now:\n- Receive emails at this address\n- Send emails using the CLI or API\n- Extract OTP codes automatically\n\nTry it out:\n  shellmail inbox\n  shellmail send someone@example.com -s "Hello" -b "Hi!"\n\n— ShellMail`,
+        });
+        testSpinner.succeed(chalk.green(`Test email sent to ${recoveryEmail}!`));
+      } catch (err) {
+        testSpinner.warn(chalk.yellow(`Could not send test email: ${(err as Error).message}`));
+      }
+    }
+
     // Show next steps
-    console.log(chalk.bold("─".repeat(50)));
-    console.log(chalk.bold("\nNext Steps\n"));
-    console.log(`  1. Send a test email to ${chalk.cyan(result.address)}`);
-    console.log(`  2. Run ${chalk.cyan("shellmail inbox")} to see it arrive\n`);
+    console.log(chalk.bold("\n" + "─".repeat(50)));
+    console.log(chalk.bold("\nYou're all set!\n"));
 
     console.log(chalk.bold("Commands\n"));
     console.log(`  ${chalk.cyan("shellmail inbox")}      Check your inbox`);

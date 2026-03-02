@@ -4,7 +4,7 @@
 
 ## What is ShellMail?
 
-ShellMail provides ephemeral email addresses for AI agents via a simple REST API. No SMTP, no IMAP, no servers to manage. Create an address, receive mail, extract OTPs automatically.
+ShellMail provides email addresses for AI agents via a simple REST API. Send and receive email. No SMTP, no IMAP, no servers to manage. Create an address, send mail, receive mail, extract OTPs automatically.
 
 ## Quick Start
 
@@ -62,6 +62,18 @@ Body: {"is_read": true} or {"is_archived": true}
 ### Delete Email
 DELETE /api/mail/:id
 
+### Send Email
+POST /api/mail/send
+Body: {"to": "user@example.com", "subject": "Hello", "body_text": "Hi there!", "body_html": "<p>Hi there!</p>"}
+Optional: "reply_to_id": "original-email-id" (for threading)
+Returns: {"ok": true, "id": "...", "message_id": "<...@shellmail.ai>"}
+Rate limits: Free 10/day, Shell 50/day, Reef 100/day
+
+### List Sent Emails
+GET /api/mail/sent
+Query params: limit=50, offset=0
+Returns: {"address": "...", "sent_count": 5, "emails": [...]}
+
 ### Configure Webhook
 PUT /api/webhook
 Body: {"url": "https://your-server.com/webhook"}
@@ -82,9 +94,11 @@ DELETE /api/addresses/me
 
 ## Key Features
 
+- **Send & Receive**: Full email capability for your agents
 - **OTP Extraction**: Verification codes are automatically extracted from emails
 - **Long Polling**: Wait for OTPs with ?timeout=30000 (up to 30 seconds)
 - **Webhooks**: Get notified instantly when email arrives (HMAC-SHA256 signed)
+- **Reply Threading**: Use reply_to_id to maintain email threads
 - **Ephemeral**: Messages auto-delete after 7 days (free tier)
 - **Edge-fast**: Runs on Cloudflare Workers globally
 
@@ -100,6 +114,9 @@ npx shellmail setup          # Create new address interactively
 npx shellmail inbox          # List emails
 npx shellmail inbox -u       # List unread only
 npx shellmail read <id>      # Read specific email
+npx shellmail send <to> -s "Subject" -b "Body"  # Send email
+npx shellmail reply <id> -b "Reply text"        # Reply to email
+npx shellmail sent           # List sent emails
 npx shellmail otp            # Get latest OTP code
 npx shellmail otp -w 30      # Wait up to 30s for OTP
 npx shellmail search --otp   # Find emails with OTPs
@@ -121,6 +138,32 @@ shellmail otp -w 30 -f github.com
 # Using API
 curl "https://shellmail.ai/api/mail/otp?timeout=30000&from=github.com" \
   -H "Authorization: Bearer sm_..."
+```
+
+## Example: Send an Email
+
+```bash
+# Using CLI
+shellmail send user@example.com -s "Hello" -b "Hi from my agent!"
+
+# Using API
+curl -X POST "https://shellmail.ai/api/mail/send" \
+  -H "Authorization: Bearer sm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"to":"user@example.com","subject":"Hello","body_text":"Hi from my agent!"}'
+```
+
+## Example: Reply to an Email
+
+```bash
+# Using CLI
+shellmail reply abc123 -b "Thanks for your email!"
+
+# Using API (with threading)
+curl -X POST "https://shellmail.ai/api/mail/send" \
+  -H "Authorization: Bearer sm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"to":"user@example.com","subject":"Re: Hello","body_text":"Thanks!","reply_to_id":"abc123"}'
 ```
 
 ## Webhook Payload
