@@ -166,30 +166,6 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   );
 }
 
-/** Send an email via MailChannels (free for Cloudflare Workers) */
-async function sendEmail(
-  to: string,
-  subject: string,
-  body: string
-): Promise<boolean> {
-  try {
-    const resp = await fetch("https://api.mailchannels.net/tx/v1/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: "noreply@shellmail.ai", name: "ShellMail" },
-        subject,
-        content: [{ type: "text/plain", value: body }],
-      }),
-    });
-    return resp.status === 202 || resp.status === 200;
-  } catch (e) {
-    console.error("MailChannels send failed:", e);
-    return false;
-  }
-}
-
 /** Simple rate limiter using D1 — max attempts per address per hour */
 async function checkRateLimit(
   db: D1Database,
@@ -271,15 +247,16 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
     return json({ message: GENERIC_MSG });
   }
 
-  // Generate new token and update
+  if (!env.RESEND_API_KEY) {
+    console.error("RESEND_API_KEY not configured — cannot send recovery email");
+    return error("Recovery service temporarily unavailable", 503);
+  }
+
+  // Generate new token
   const newToken = generateToken();
   const newTokenHash = await hash(newToken);
 
-  await env.DB.prepare("UPDATE addresses SET token_hash = ? WHERE id = ?")
-    .bind(newTokenHash, addr.id)
-    .run();
-
-  // Send recovery email via MailChannels
+  // Send recovery email BEFORE updating token — if send fails, old token stays valid
   const emailBody = `Your ShellMail token has been reset.
 
 Address: ${localPart}@${domain}
@@ -290,11 +267,22 @@ If you did not request this, your token has been changed. Contact support.
 
 — ShellMail (shellmail.ai)`;
 
-  await sendEmail(
-    recovery_email,
-    `ShellMail Token Recovery — ${localPart}@${domain}`,
-    emailBody
-  );
+  const result = await sendViaResend(env.RESEND_API_KEY, {
+    from: `ShellMail <noreply@${env.DOMAIN}>`,
+    to: recovery_email,
+    subject: `ShellMail Token Recovery — ${localPart}@${domain}`,
+    text: emailBody,
+  });
+
+  if (!result.success) {
+    console.error("Recovery email send failed:", result.error);
+    return error("Failed to send recovery email. Please try again later.", 500);
+  }
+
+  // Email sent successfully — now commit the token change
+  await env.DB.prepare("UPDATE addresses SET token_hash = ? WHERE id = ?")
+    .bind(newTokenHash, addr.id)
+    .run();
 
   return json({ message: GENERIC_MSG });
 }
