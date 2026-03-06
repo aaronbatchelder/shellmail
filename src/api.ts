@@ -297,7 +297,7 @@ async function listMail(request: Request, env: Env): Promise<Response> {
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
   const offset = parseInt(url.searchParams.get("offset") || "0");
 
-  let query = "SELECT id, from_addr, from_name, subject, received_at, is_read, is_archived, expires_at FROM emails WHERE address_id = ?";
+  let query = "SELECT id, from_addr, from_name, subject, received_at, is_read, is_archived, expires_at, message_id, thread_id, in_reply_to, references_header FROM emails WHERE address_id = ?";
   const params: unknown[] = [addr.id];
 
   if (unreadOnly) {
@@ -353,6 +353,10 @@ async function getMail(
     is_read: email.is_read,
     is_archived: email.is_archived,
     expires_at: email.expires_at,
+    message_id: email.message_id,
+    thread_id: email.thread_id,
+    in_reply_to: email.in_reply_to,
+    references_header: email.references_header,
   });
 }
 

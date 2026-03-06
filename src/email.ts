@@ -128,6 +128,20 @@ export default {
       return;
     }
 
+    // Deduplicate by Message-ID — skip if we already have this exact message
+    if (parsed.messageId) {
+      const dupe = await env.DB.prepare(
+        "SELECT id FROM emails WHERE address_id = ? AND message_id = ?"
+      )
+        .bind(addr.id, parsed.messageId)
+        .first();
+
+      if (dupe) {
+        console.log(`Duplicate Message-ID ${parsed.messageId} for ${parsed.to}, skipping`);
+        return;
+      }
+    }
+
     // Extract OTP code and link
     const otp = extractOtp(parsed.subject, parsed.bodyText, parsed.bodyHtml);
 
@@ -213,6 +227,9 @@ export default {
         received_at: new Date().toISOString(),
         otp_code: otp.code,
         otp_link: otp.link,
+        thread_id: threadId,
+        message_id: parsed.messageId,
+        in_reply_to: parsed.inReplyTo,
       });
 
       // Fire and forget — don't block email processing

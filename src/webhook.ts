@@ -19,6 +19,9 @@ export interface WebhookPayload {
     has_otp: boolean;
     otp_code: string | null;
     otp_link: string | null;
+    thread_id: string | null;
+    message_id: string | null;
+    in_reply_to: string | null;
   };
 }
 
@@ -194,6 +197,9 @@ export function buildEmailPayload(
     received_at: string;
     otp_code: string | null;
     otp_link: string | null;
+    thread_id: string | null;
+    message_id: string | null;
+    in_reply_to: string | null;
   }
 ): WebhookPayload {
   return {
@@ -209,6 +215,9 @@ export function buildEmailPayload(
       has_otp: !!(email.otp_code || email.otp_link),
       otp_code: email.otp_code,
       otp_link: email.otp_link,
+      thread_id: email.thread_id,
+      message_id: email.message_id,
+      in_reply_to: email.in_reply_to,
     },
   };
 }
