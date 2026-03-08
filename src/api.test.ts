@@ -209,6 +209,15 @@ beforeAll(async () => {
     `ALTER TABLE emails ADD COLUMN thread_id TEXT`,
     `ALTER TABLE emails ADD COLUMN in_reply_to TEXT`,
     `ALTER TABLE emails ADD COLUMN references_header TEXT`,
+    // 0009 recovery
+    `ALTER TABLE addresses ADD COLUMN deleted_at TEXT`,
+    `ALTER TABLE addresses ADD COLUMN held_until TEXT`,
+    `CREATE TABLE IF NOT EXISTS recovery_log (
+      id TEXT PRIMARY KEY, address_id TEXT, local_part TEXT NOT NULL,
+      domain TEXT NOT NULL, recovery_hash_matched INTEGER NOT NULL DEFAULT 0,
+      failure_reason TEXT, ip_address TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ];
 
   for (const sql of migrations) {
@@ -225,6 +234,7 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM emails").run();
   await env.DB.prepare("DELETE FROM addresses").run();
   await env.DB.prepare("DELETE FROM rate_limits").run();
+  await env.DB.prepare("DELETE FROM recovery_log").run();
 });
 
 // ── Health ───────────────────────────────────────────────
@@ -551,6 +561,80 @@ describe("POST /api/recover", () => {
       (env as any).RESEND_API_KEY = originalKey;
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("logs recovery attempt for non-existent address", async () => {
+    await call(
+      post("/api/recover", {
+        address: "ghost@shellmail.ai",
+        recovery_email: "x@y.com",
+      })
+    );
+
+    const log = await env.DB.prepare(
+      "SELECT * FROM recovery_log WHERE local_part = 'ghost'"
+    ).first<{ failure_reason: string; recovery_hash_matched: number }>();
+
+    expect(log).not.toBeNull();
+    expect(log!.recovery_hash_matched).toBe(0);
+    expect(log!.failure_reason).toBe("address_not_found");
+  });
+
+  it("logs recovery attempt for wrong recovery email", async () => {
+    await createTestAddress("auditme", "correct@example.com");
+    await call(
+      post("/api/recover", {
+        address: "auditme@shellmail.ai",
+        recovery_email: "wrong@example.com",
+      })
+    );
+
+    const log = await env.DB.prepare(
+      "SELECT * FROM recovery_log WHERE local_part = 'auditme'"
+    ).first<{ failure_reason: string; recovery_hash_matched: number }>();
+
+    expect(log).not.toBeNull();
+    expect(log!.recovery_hash_matched).toBe(0);
+    expect(log!.failure_reason).toBe("recovery_email_mismatch");
+  });
+
+  it("logs successful recovery attempt (503 due to missing Resend key)", async () => {
+    await createTestAddress("auditok", "ok@example.com");
+    await call(
+      post("/api/recover", {
+        address: "auditok@shellmail.ai",
+        recovery_email: "ok@example.com",
+      })
+    );
+
+    const log = await env.DB.prepare(
+      "SELECT * FROM recovery_log WHERE local_part = 'auditok'"
+    ).first<{ failure_reason: string; recovery_hash_matched: number }>();
+
+    expect(log).not.toBeNull();
+    expect(log!.recovery_hash_matched).toBe(1);
+    expect(log!.failure_reason).toBe("resend_not_configured");
+  });
+});
+
+// ── Preflight Validation ────────────────────────────────
+
+describe("Address creation preflight", () => {
+  it("gives helpful error when recovery_email is missing", async () => {
+    const { status, body } = await call(
+      post("/api/addresses", { local: "norecovery" })
+    );
+    expect(status).toBe(400);
+    expect(body.error).toContain("recovery_email is required");
+  });
+
+  it("gives helpful error when recovery_email is invalid", async () => {
+    const { status, body } = await call(
+      post("/api/addresses", { local: "badrecovery", recovery_email: "not-an-email" })
+    );
+    expect(status).toBe(400);
+    expect(body.error).toContain("not a valid email");
+    expect(body.error).toContain("typos");
   });
 });
 
@@ -939,7 +1023,7 @@ describe("Webhook API", () => {
 // ── Delete Address ───────────────────────────────────────
 
 describe("DELETE /api/addresses/me", () => {
-  it("deletes address and cascades emails", async () => {
+  it("soft-deletes address with 14-day hold", async () => {
     const { token } = await createTestAddress("deleteme");
     const addressId = await getAddressId(token);
     await insertTestEmail(addressId);
@@ -947,18 +1031,88 @@ describe("DELETE /api/addresses/me", () => {
     const { status, body } = await call(del("/api/addresses/me", token));
     expect(status).toBe(200);
     expect(body.deleted).toBe("deleteme@shellmail.ai");
+    expect(body.held_until).toBeDefined();
+    expect(body.note).toContain("14 days");
 
     // Token should no longer work
     const { status: s2 } = await call(req("/api/mail", { token }));
     expect(s2).toBe(401);
 
-    // Emails should be gone (cascade)
+    // Emails should be gone
     const row = await env.DB.prepare(
       "SELECT id FROM emails WHERE address_id = ?"
     )
       .bind(addressId)
       .first();
     expect(row).toBeNull();
+
+    // Address row should still exist (soft-deleted)
+    const addr = await env.DB.prepare(
+      "SELECT deleted_at, held_until FROM addresses WHERE id = ?"
+    )
+      .bind(addressId)
+      .first<{ deleted_at: string; held_until: string }>();
+    expect(addr).not.toBeNull();
+    expect(addr!.deleted_at).toBeDefined();
+    expect(addr!.held_until).toBeDefined();
+  });
+
+  it("allows original owner to reclaim held address", async () => {
+    const recoveryEmail = "reclaim@example.com";
+    const { token } = await createTestAddress("reclaimme", recoveryEmail);
+
+    // Delete the address
+    await call(del("/api/addresses/me", token));
+
+    // Reclaim with the same recovery email
+    const { status, body } = await call(
+      post("/api/addresses", { local: "reclaimme", recovery_email: recoveryEmail })
+    );
+    expect(status).toBe(201);
+    expect(body.address).toBe("reclaimme@shellmail.ai");
+    expect(body.reclaimed).toBe(true);
+    expect(body.token).toMatch(/^sm_/);
+
+    // New token should work
+    const { status: s2 } = await call(req("/api/mail", { token: body.token }));
+    expect(s2).toBe(200);
+  });
+
+  it("blocks different owner from claiming held address", async () => {
+    await createTestAddress("held", "owner@example.com");
+    const { token } = await createTestAddress("held2", "owner@example.com");
+
+    // We need a token for the "held" address specifically
+    const { token: heldToken } = await createTestAddress("heldaddr", "owner@example.com");
+    await call(del("/api/addresses/me", heldToken));
+
+    // Different owner tries to claim it
+    const { status, body } = await call(
+      post("/api/addresses", { local: "heldaddr", recovery_email: "other@example.com" })
+    );
+    expect(status).toBe(409);
+    expect(body.error).toContain("reserved");
+  });
+
+  it("allows anyone to claim address after hold expires", async () => {
+    const { token } = await createTestAddress("expiring", "owner@example.com");
+    const addressId = await getAddressId(token);
+
+    // Delete and manually expire the hold
+    await call(del("/api/addresses/me", token));
+    await env.DB.prepare(
+      "UPDATE addresses SET held_until = datetime('now', '-1 day') WHERE id = ?"
+    )
+      .bind(addressId)
+      .run();
+
+    // New owner can now claim it
+    const { status, body } = await call(
+      post("/api/addresses", { local: "expiring", recovery_email: "newowner@example.com" })
+    );
+    expect(status).toBe(201);
+    expect(body.address).toBe("expiring@shellmail.ai");
+    expect(body.reclaimed).toBeUndefined();
   });
 });
 

@@ -21,6 +21,8 @@ export interface Address {
   messages_received: number;
   messages_sent: number;
   last_activity_at: string | null;
+  deleted_at: string | null;
+  held_until: string | null;
 }
 
 export interface Email {

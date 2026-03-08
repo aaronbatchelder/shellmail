@@ -38,7 +38,7 @@ async function authenticate(
 
   const tokenHash = await hash(token);
   const addr = await db
-    .prepare("SELECT * FROM addresses WHERE token_hash = ?")
+    .prepare("SELECT * FROM addresses WHERE token_hash = ? AND deleted_at IS NULL")
     .bind(tokenHash)
     .first<Address>();
 
@@ -116,9 +116,12 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   const localError = validateLocalPart(local);
   if (localError) return error(localError);
 
-  // Validate recovery email
-  if (!recovery_email || !validateEmail(recovery_email)) {
-    return error("Valid recovery_email is required");
+  // Preflight: validate recovery email before claiming address
+  if (!recovery_email) {
+    return error("recovery_email is required — this is how you recover your token if lost");
+  }
+  if (!validateEmail(recovery_email)) {
+    return error("recovery_email is not a valid email address. Double-check for typos — you cannot change this later.");
   }
 
   // Rate limit by recovery email: max 10 addresses per day
@@ -135,14 +138,50 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  // Check availability
+  // Check availability — allow reclaim of held addresses by the original owner
   const existing = await env.DB.prepare(
-    "SELECT id FROM addresses WHERE local_part = ? AND domain = ?"
+    "SELECT id, deleted_at, held_until, recovery_hash FROM addresses WHERE local_part = ? AND domain = ?"
   )
     .bind(local.toLowerCase(), env.DOMAIN)
-    .first();
+    .first<{ id: string; deleted_at: string | null; held_until: string | null; recovery_hash: string }>();
 
-  if (existing) return error(`${local}@${env.DOMAIN} is already taken`, 409);
+  if (existing) {
+    const now = new Date().toISOString();
+    const isHeld = existing.deleted_at && existing.held_until && existing.held_until > now;
+    const isExpiredHold = existing.deleted_at && existing.held_until && existing.held_until <= now;
+
+    if (!existing.deleted_at) {
+      // Active address — taken
+      return error(`${local}@${env.DOMAIN} is already taken`, 409);
+    } else if (isHeld && existing.recovery_hash === recoveryHash) {
+      // Held address, same owner — reclaim it
+      const token = generateToken();
+      const tokenHash = await hash(token);
+      await env.DB.prepare(
+        "UPDATE addresses SET token_hash = ?, recovery_hash = ?, deleted_at = NULL, held_until = NULL, status = 'active' WHERE id = ?"
+      )
+        .bind(tokenHash, recoveryHash, existing.id)
+        .run();
+
+      return json(
+        {
+          address: `${local.toLowerCase()}@${env.DOMAIN}`,
+          token,
+          reclaimed: true,
+          note: "Address reclaimed. Save this token — it will not be shown again.",
+        },
+        201
+      );
+    } else if (isHeld) {
+      // Held by a different owner — can't take it yet
+      return error(`${local}@${env.DOMAIN} is reserved and cannot be claimed yet`, 409);
+    } else if (isExpiredHold) {
+      // Hold expired — delete the old row and allow fresh creation
+      await env.DB.prepare("DELETE FROM addresses WHERE id = ?")
+        .bind(existing.id)
+        .run();
+    }
+  }
 
   // Generate token and IDs
   const id = generateId();
@@ -233,8 +272,9 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
 
   const GENERIC_MSG =
     "If the address and recovery email match, a new token will be sent.";
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
 
-  // Look up address
+  // Look up address (include soft-deleted — allow recovery of held addresses)
   const recoveryHash = await hash(recovery_email);
   const addr = await env.DB.prepare(
     "SELECT * FROM addresses WHERE local_part = ? AND domain = ? AND recovery_hash = ?"
@@ -242,13 +282,40 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
     .bind(localPart.toLowerCase(), domain, recoveryHash)
     .first<Address>();
 
+  // Helper to log recovery attempts
+  async function logRecovery(addressId: string | null, matched: boolean, failureReason: string | null) {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO recovery_log (id, address_id, local_part, domain, recovery_hash_matched, failure_reason, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(generateId(), addressId, localPart.toLowerCase(), domain, matched ? 1 : 0, failureReason, ip)
+        .run();
+    } catch (e) {
+      console.error("Failed to log recovery attempt:", e);
+    }
+  }
+
   // Always return same response (prevent enumeration)
   if (!addr) {
+    // Check if address exists at all (for audit log context)
+    const anyAddr = await env.DB.prepare(
+      "SELECT id FROM addresses WHERE local_part = ? AND domain = ?"
+    )
+      .bind(localPart.toLowerCase(), domain)
+      .first<{ id: string }>();
+
+    await logRecovery(
+      anyAddr?.id || null,
+      false,
+      anyAddr ? "recovery_email_mismatch" : "address_not_found"
+    );
     return json({ message: GENERIC_MSG });
   }
 
   if (!env.RESEND_API_KEY) {
     console.error("RESEND_API_KEY not configured — cannot send recovery email");
+    await logRecovery(addr.id, true, "resend_not_configured");
     return error("Recovery service temporarily unavailable", 503);
   }
 
@@ -276,14 +343,19 @@ If you did not request this, your token has been changed. Contact support.
 
   if (!result.success) {
     console.error("Recovery email send failed:", result.error);
+    await logRecovery(addr.id, true, `resend_send_failed: ${result.error}`);
     return error("Failed to send recovery email. Please try again later.", 500);
   }
 
   // Email sent successfully — now commit the token change
-  await env.DB.prepare("UPDATE addresses SET token_hash = ? WHERE id = ?")
+  // If the address was soft-deleted, reactivate it
+  await env.DB.prepare(
+    "UPDATE addresses SET token_hash = ?, deleted_at = NULL, held_until = NULL, status = 'active' WHERE id = ?"
+  )
     .bind(newTokenHash, addr.id)
     .run();
 
+  await logRecovery(addr.id, true, null);
   return json({ message: GENERIC_MSG });
 }
 
@@ -930,17 +1002,32 @@ async function deleteWebhook(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, message: "Webhook configuration removed" });
 }
 
-/** DELETE /api/addresses/me — delete address and all mail */
+/** DELETE /api/addresses/me — soft-delete address with 14-day hold window */
 async function deleteAddress(request: Request, env: Env): Promise<Response> {
   const addr = await authenticate(request, env.DB);
   if (addr instanceof Response) return addr;
 
-  // Cascade delete handles emails
-  await env.DB.prepare("DELETE FROM addresses WHERE id = ?")
+  const now = new Date();
+  const heldUntil = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Soft-delete: mark as deleted, hold for 14 days so the same owner can reclaim
+  await env.DB.prepare(
+    "UPDATE addresses SET deleted_at = ?, held_until = ?, status = 'disabled' WHERE id = ?"
+  )
+    .bind(now.toISOString(), heldUntil, addr.id)
+    .run();
+
+  // Clean up emails — they're gone
+  await env.DB.prepare("DELETE FROM emails WHERE address_id = ?")
     .bind(addr.id)
     .run();
 
-  return json({ ok: true, deleted: `${addr.local_part}@${addr.domain}` });
+  return json({
+    ok: true,
+    deleted: `${addr.local_part}@${addr.domain}`,
+    held_until: heldUntil,
+    note: "Address held for 14 days. Re-create with the same recovery email to reclaim it.",
+  });
 }
 
 // ── Router ───────────────────────────────────────────────

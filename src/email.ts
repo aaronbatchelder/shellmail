@@ -110,9 +110,9 @@ export default {
 
     const [, localPart, domain] = toMatch;
 
-    // Look up the address in D1
+    // Look up the address in D1 (skip soft-deleted addresses)
     const addr = await env.DB.prepare(
-      "SELECT * FROM addresses WHERE local_part = ? AND domain = ?"
+      "SELECT * FROM addresses WHERE local_part = ? AND domain = ? AND deleted_at IS NULL"
     )
       .bind(localPart.toLowerCase(), domain.toLowerCase())
       .first<Address>();

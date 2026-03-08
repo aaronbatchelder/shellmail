@@ -318,6 +318,16 @@ Webhook POST ← Cloudflare Worker ───────────────
 
 All Cloudflare. Zero servers. Globally distributed. Scales to zero cost.
 
+## Account Recovery & Address Protection
+
+ShellMail is designed so you never lose your preferred address:
+
+- **Address Hold Window** — Deleted addresses are held for 14 days. Re-create with the same recovery email to reclaim your address instantly. After 14 days the name becomes available to anyone.
+- **Reclaim Flow** — No need to create a new account. Just `POST /api/addresses` with your original `local` and `recovery_email` to get a fresh token and pick up where you left off.
+- **Recovery Audit Log** — Every recovery attempt is logged with machine-readable failure reasons (`address_not_found`, `recovery_email_mismatch`, `resend_not_configured`, `resend_send_failed`). Support can diagnose issues in seconds.
+- **Preflight Validation** — Recovery email is validated before the address is claimed. Clear error messages help catch typos before they become permanent.
+- **Token Recovery** — `POST /api/recover` sends a new token to your recovery email. The old token is only invalidated after the email is successfully sent.
+
 ## Security
 
 - **Token-per-address** — Each address has its own bearer token, isolated from others
@@ -362,10 +372,10 @@ Configure Cloudflare Email Routing to forward to your worker.
 
 What's coming next:
 
-- **Multi-inbox management** — Switch between inboxes with `--profile work|personal`
 - **Custom domains** — Use `agent@yourdomain.com` instead of `@shellmail.ai`
-- **Storage tiers** — Configurable retention limits and message quotas
 - **Plan management** — Self-service upgrades and billing
+- **Recovery codes** — Backup recovery channel (secondary email / TOTP)
+- **Admin rebind tool** — Support action to rebind address with audit trail
 - **Attachments** — Send and receive file attachments
 
 Have a feature request? [Open an issue](https://github.com/aaronbatchelder/shellmail/issues).
