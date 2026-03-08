@@ -26,7 +26,8 @@ If no token is configured:
    - Or use `auto` for the name to generate a random address (e.g., "swift-reef-4821")
 2. Run: `{baseDir}/scripts/shellmail.sh create <name> <recovery_email>`
 3. If the address is already taken:
-   - Suggest a different name or use `auto`
+   - If the user says it was their old address: try creating with the same recovery email — deleted addresses are held for 14 days and can be reclaimed
+   - Otherwise: suggest a different name or use `auto`
    - Do NOT suggest recovery unless the user confirms it's their previous inbox
 4. Save the returned token:
 

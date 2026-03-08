@@ -103,6 +103,8 @@ export interface CreateAddressResponse {
   address: string;
   token: string;
   note: string;
+  /** True if a previously-deleted address was reclaimed */
+  reclaimed?: boolean;
 }
 
 export interface HealthResponse {
@@ -431,10 +433,11 @@ export class ShellMail {
   // ── Account ──────────────────────────────────────────
 
   /**
-   * Delete your address and all emails
-   * WARNING: This is irreversible!
+   * Delete your address and all emails.
+   * The address is held for 14 days — reclaim it by calling
+   * ShellMail.createAddress() with the same local part and recovery email.
    */
-  async deleteAccount(): Promise<{ ok: boolean; deleted: string }> {
+  async deleteAccount(): Promise<{ ok: boolean; deleted: string; held_until: string }> {
     return this.request("DELETE", "/api/addresses/me");
   }
 

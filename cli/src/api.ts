@@ -8,6 +8,7 @@ export interface CreateAddressResponse {
   address: string;
   token: string;
   note: string;
+  reclaimed?: boolean;
 }
 
 export interface EmailSummary {
