@@ -1,5 +1,6 @@
 ---
 name: shellmail
+version: 1.2.2
 description: Email API for AI agents. Check inbox, read emails, extract OTP codes, search messages via ShellMail. Trigger on "check email", "inbox", "otp", "verification code", "shellmail", or any email-related requests.
 homepage: https://shellmail.ai
 source: https://github.com/aaronbatchelder/shellmail
@@ -12,6 +13,15 @@ env:
     required: false
     default: https://shellmail.ai
     description: API base URL (only change for self-hosted instances)
+metadata:
+  openclaw:
+    requires:
+      env:
+        - SHELLMAIL_TOKEN
+      bins:
+        - curl
+        - python3
+      primaryEnv: SHELLMAIL_TOKEN
 ---
 
 # ShellMail
