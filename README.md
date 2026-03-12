@@ -42,6 +42,12 @@ npx shellmail setup
 }
 ```
 
+**For Claude Code users** — Install the plugin:
+
+```bash
+claude plugin install https://github.com/aaronbatchelder/shellmail
+```
+
 **For OpenClaw users** — Install the skill:
 
 ```bash
@@ -299,6 +305,39 @@ Your agent can now handle email conversationally:
 - *"Send an email to user@example.com saying hello"*
 - *"Reply to that email"*
 
+## Claude Code Plugin
+
+ShellMail is available as a Claude Code plugin for seamless integration directly in your coding sessions.
+
+### Install
+
+```bash
+claude plugin install https://github.com/aaronbatchelder/shellmail
+```
+
+This installs the ShellMail skill into Claude Code. On first use, Claude will walk you through creating an inbox and saving your token.
+
+### Security Considerations
+
+The plugin requires a `SHELLMAIL_TOKEN` that grants full access to your inbox and OTPs. A few things to be aware of:
+
+- **Token persistence** — After setup, the token is saved to agent configuration via `gateway config.patch`, giving Claude persistent inbox access
+- **Dedicated inbox** — Use ShellMail for agent tasks only, not personal email
+- **Revoke when done** — Remove the token from config when you no longer need the plugin:
+
+```bash
+gateway config.patch '{"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":""}}}}}'
+```
+
+Or delete your address entirely to free the name (addresses are held for 14 days, so you can reclaim yours):
+
+```bash
+# Via the OpenClaw skill script
+./skill/scripts/shellmail.sh delete-account
+```
+
+See [.claude-plugin/README.md](.claude-plugin/README.md) for full security guidance.
+
 ## Environment Variables
 
 | Variable | Description |
@@ -386,6 +425,7 @@ Have a feature request? [Open an issue](https://github.com/aaronbatchelder/shell
 - [ClawHub](https://clawhub.ai/aaronbatchelder/shellmail) — OpenClaw skill
 - [npm: shellmail](https://www.npmjs.com/package/shellmail) — CLI package
 - [npm: shellmail-mcp](https://www.npmjs.com/package/shellmail-mcp) — MCP server
+- [Claude Code Plugin](.claude-plugin/README.md) — Plugin for Claude Code
 - [OpenAPI](https://shellmail.ai/openapi.json) — API specification
 - [llms.txt](https://shellmail.ai/llms.txt) — LLM-friendly docs
 
