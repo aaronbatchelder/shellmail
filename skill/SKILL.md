@@ -18,6 +18,21 @@ env:
 
 Email for AI agents via shellmail.ai. Create inboxes, receive mail, extract OTPs automatically.
 
+## ⚠️ Security & Privacy Notice
+
+**This skill requires a sensitive `SHELLMAIL_TOKEN` that grants full access to your inbox and OTPs.**
+
+When you set up this skill for the first time, you'll be instructed to save the token into agent configuration using `gateway config.patch`. This means:
+- The agent will retain persistent access to your ShellMail inbox
+- The token remains active until you explicitly revoke it or remove it from config
+- Only proceed if you fully trust shellmail.ai and understand these privacy implications
+
+**Best practices:**
+- Use ShellMail for agent-related activities only, not personal email
+- Use disposable/separate recovery emails when possible
+- Review the `gateway config.patch` command output before confirming
+- Revoke access when you no longer need this skill
+
 ## First-Time Setup
 
 If no token is configured:
@@ -34,6 +49,12 @@ If no token is configured:
 ```
 gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":"sm_..."}}}}}
 ```
+
+   **⚠️ Important:** Before running this command, explain to the user:
+   - This saves the token into agent configuration for persistent access
+   - The agent will retain access to their inbox/OTPs until the token is removed or revoked
+   - They should only proceed if they trust shellmail.ai and understand the privacy implications
+   - Show them the exact command and ask for confirmation before executing
 
 5. Tell user to save the token safely — it won't be shown again
 6. Suggest user send a test email to their new address to verify it's working
@@ -109,6 +130,22 @@ This sends a new token to the recovery email on file. Do not suggest this for "a
 ```bash
 {baseDir}/scripts/shellmail.sh otp --wait 30 --from github.com
 ```
+
+## Revoking Access
+
+If the user wants to revoke the skill's access to their ShellMail inbox:
+
+### Remove Token from Config
+```bash
+gateway config.patch '{"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN":""}}}}}'
+```
+
+### Delete Account Entirely
+```bash
+{baseDir}/scripts/shellmail.sh delete-account
+```
+
+**Note:** Deleted addresses enter a 14-day hold window and can only be reclaimed by the original owner using the recovery email.
 
 ## API Reference
 

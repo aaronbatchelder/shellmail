@@ -1,0 +1,28 @@
+{
+  "name": "shellmail",
+  "version": "1.2.0",
+  "description": "Email API for AI agents. Send emails, check inbox, read messages, extract OTP codes, search, and reply via ShellMail.",
+  "homepage": "https://shellmail.ai",
+  "source": "https://github.com/aaronbatchelder/shellmail",
+  "author": {
+    "name": "Aaron Batchelder"
+  },
+  "skills": [
+    {
+      "name": "shellmail",
+      "path": "skill",
+      "env": {
+        "SHELLMAIL_TOKEN": {
+          "required": true,
+          "sensitive": true,
+          "description": "Bearer token for ShellMail API authentication (grants full mailbox/OTP access)"
+        },
+        "SHELLMAIL_API_URL": {
+          "required": false,
+          "default": "https://shellmail.ai",
+          "description": "API base URL (only change for self-hosted instances)"
+        }
+      }
+    }
+  ]
+}
