@@ -5,8 +5,8 @@
 <h1 align="center">ShellMail</h1>
 
 <p align="center">
-  <strong>Email for AI agents.</strong><br>
-  Give your agent an inbox in under 60 seconds. No servers. No config. Just email that works.
+  <strong>Instant OTP codes for your AI agent.</strong><br>
+  Give your agent an inbox in 60 seconds. Block until the code arrives. Move on.
 </p>
 
 <p align="center">
@@ -18,13 +18,33 @@
 
 ---
 
+```typescript
+// Your agent needs a verification code. One call. Done.
+const { code } = await mail.waitForOtp(30, 'github.com');
+// → "847291"
+```
+
 ## Quick Start
 
-**For everyone** — Create an inbox and start receiving email:
+**Step 1** — Create an inbox:
 
 ```bash
 npx shellmail setup
 ```
+
+**Step 2** — Wait for an OTP in your agent:
+
+```bash
+# CLI — blocks until the code arrives (up to 30s)
+shellmail otp -w 30 -f github.com
+
+# API — long-poll directly
+curl "https://shellmail.ai/api/mail/otp?timeout=30000&from=github.com" \
+  -H "Authorization: Bearer sm_..."
+# → {"found": true, "code": "847291", "from": "noreply@github.com"}
+```
+
+That's the whole flow. Full inbox, send/reply, webhooks, and threads are all there when you need them.
 
 **For Claude Desktop / Cursor / Cline** — Add the MCP server:
 
@@ -58,27 +78,28 @@ That's it. You now have `yourname@shellmail.ai` ready to send and receive mail.
 
 ## Why ShellMail?
 
-Your AI agent needs to verify accounts, receive notifications, and get OTP codes. But email is complex—SMTP, IMAP, spam filters, server management.
+Your agent is in the middle of a flow — sign up, verify, continue. It triggers an email verification and now needs the code. With a normal email provider that means IMAP, OAuth, polling loops, parsing, and hoping the code hasn't expired by the time you parse it.
 
-ShellMail is email reduced to a REST API:
+With ShellMail:
 
-- **Create address** → Get a token
-- **Receive mail** → We store it
-- **Poll or webhook** → Your agent gets it
+1. **Create address** → Get a token (once, at setup)
+2. **Trigger the verification email** → Whatever your agent is doing
+3. **`GET /api/mail/otp?timeout=30000`** → Blocks up to 30s, returns the code the moment it arrives
 
-No servers. No SMTP. No complexity.
+OTPs are extracted automatically. No parsing. No polling loop. No timeouts to manage.
 
 ## Features
 
-- **Send & Receive** — Full email capability for your agents
-- **OTP Extraction** — Verification codes are automatically extracted from emails
-- **Long Polling** — Wait up to 30s for an OTP to arrive: `GET /api/mail/otp?timeout=30000`
-- **Webhooks** — Get instant notifications when mail arrives (HMAC-SHA256 signed)
-- **Slack & Discord** — Native webhook formatting for Slack and Discord notifications
+- **OTP Extraction** — Verification codes are automatically parsed out of every email
+- **Long Polling** — `GET /api/mail/otp?timeout=30000` blocks up to 30s and returns the instant a code arrives
+- **Sender Filtering** — Scope the wait to a specific domain: `?from=github.com`
+- **Send & Receive** — Full email capability beyond OTPs: send, reply, archive
+- **Webhooks** — Push notifications when mail arrives (HMAC-SHA256 signed)
+- **Slack & Discord** — Native webhook formatting for Slack and Discord
+- **Threads** — View conversations grouped by thread
+- **Search** — Find emails by sender, content, or OTP presence
 - **Multi-Inbox Profiles** — Manage multiple addresses with `shellmail profile`
 - **TypeScript SDK** — First-class SDK: `npm install @shellmail/sdk`
-- **Search** — Find emails by sender, content, or OTP presence
-- **Threads** — View conversations grouped by thread
 - **Rate Limited** — Tiered send limits (Free: 10/day, Shell: 50/day, Reef: 100/day)
 - **Edge-fast** — Runs on Cloudflare Workers globally
 
@@ -99,6 +120,11 @@ npx shellmail <command>
 shellmail setup              # Create new address interactively
 shellmail status             # Check service status
 
+# OTP — the main use case
+shellmail otp                # Get latest OTP code
+shellmail otp -w 30          # Wait up to 30s for OTP
+shellmail otp -f github.com  # Wait for OTP from a specific sender
+
 # Email
 shellmail inbox              # List emails
 shellmail inbox -u           # List unread only
@@ -106,9 +132,6 @@ shellmail read <id>          # Read specific email
 shellmail send <to> -s "Subject" -b "Body"  # Send an email
 shellmail reply <id> -b "Reply text"        # Reply to an email
 shellmail sent               # List sent emails
-shellmail otp                # Get latest OTP code
-shellmail otp -w 30          # Wait up to 30s for OTP
-shellmail otp -f github.com  # Filter by sender
 shellmail search --otp       # Find emails with OTPs
 shellmail search -q "verify" # Search by keyword
 
@@ -142,23 +165,30 @@ curl -X POST https://shellmail.ai/api/addresses \
 {"address": "my-agent@shellmail.ai", "token": "sm_abc123..."}
 ```
 
-### List Emails
+### Get OTP (long-polling) ← the main event
+
+Block until a verification code arrives — up to 30 seconds. Returns immediately when the email lands.
 
 ```bash
-curl https://shellmail.ai/api/mail \
-  -H "Authorization: Bearer sm_abc123..."
-```
-
-### Get Latest OTP (with long-polling)
-
-```bash
-# Wait up to 30 seconds for an OTP from GitHub
 curl "https://shellmail.ai/api/mail/otp?timeout=30000&from=github.com" \
   -H "Authorization: Bearer sm_abc123..."
 ```
 
 ```json
 {"found": true, "code": "123456", "from": "noreply@github.com", "subject": "Your verification code"}
+```
+
+Parameters:
+- `timeout` — milliseconds to wait (max 30000)
+- `from` — filter by sender domain (optional)
+
+If no OTP arrives within the timeout: `{"found": false}`.
+
+### List Emails
+
+```bash
+curl https://shellmail.ai/api/mail \
+  -H "Authorization: Bearer sm_abc123..."
 ```
 
 ### Search Emails
@@ -251,11 +281,12 @@ import { ShellMail } from '@shellmail/sdk';
 
 const mail = new ShellMail({ token: 'sm_...' });
 
+// Wait for OTP — blocks up to 30s, returns the code
+const { code } = await mail.waitForOtp(30, 'github.com');
+// → "847291"
+
 // Check inbox
 const inbox = await mail.inbox();
-
-// Wait for OTP
-const code = await mail.waitForOtp(30, 'github.com');
 
 // Send email
 await mail.send({
