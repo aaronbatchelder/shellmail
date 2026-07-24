@@ -12,8 +12,16 @@ import {
   extractToken,
   validateLocalPart,
   validateEmail,
+  timingSafeEqual,
 } from "./auth";
 import { sendViaResend, generateMessageId, getSendLimit } from "./send";
+
+// ── Limits ───────────────────────────────────────────────
+
+const MAX_SUBJECT_LENGTH = 500;
+const MAX_BODY_TEXT_LENGTH = 100_000;
+const MAX_BODY_HTML_LENGTH = 500_000;
+const MAX_WEBHOOK_URL_LENGTH = 2048;
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -26,6 +34,80 @@ function json(data: unknown, status = 200): Response {
 
 function error(message: string, status = 400): Response {
   return json({ error: message }, status);
+}
+
+/** Parse an integer query param, falling back to a default on garbage input */
+function intParam(
+  url: URL,
+  name: string,
+  fallback: number,
+  max: number
+): number {
+  const raw = url.searchParams.get(name);
+  if (raw === null) return fallback;
+  const value = parseInt(raw, 10);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return Math.min(value, max);
+}
+
+/** Escape LIKE wildcards so user input matches literally (use with ESCAPE '\') */
+function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Validate a webhook URL. Rejects targets that could be used to probe
+ * internal infrastructure (localhost, private/link-local IPs, cloud metadata).
+ * Returns an error message, or null if the URL is acceptable.
+ */
+function validateWebhookUrl(url: string): string | null {
+  if (url.length > MAX_WEBHOOK_URL_LENGTH) return "url is too long";
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "Invalid url format";
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return "url must be http or https";
+  }
+
+  const host = parsed.hostname.toLowerCase();
+
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local")
+  ) {
+    return "url must not point to a local or internal host";
+  }
+
+  // Reject IPv6 literals outright — webhooks should use a hostname or public IPv4
+  if (host.includes(":")) {
+    return "url must not use an IPv6 literal address";
+  }
+
+  // Reject private/reserved IPv4 literals
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [a, b] = [parseInt(ipv4[1], 10), parseInt(ipv4[2], 10)];
+    const isPrivate =
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224;
+    if (isPrivate) {
+      return "url must not point to a private or reserved IP address";
+    }
+  }
+
+  return null;
 }
 
 /** Authenticate request — returns the address row or an error response */
@@ -74,18 +156,20 @@ async function getStats(env: Env) {
 
 // ── Routes ───────────────────────────────────────────────
 
-// IPs exempt from rate limiting (for testing)
-const WHITELISTED_IPS = ["69.5.113.226"];
+/** Check if a request carries the admin secret (constant-time comparison) */
+function hasAdminSecret(request: Request, env: Env): boolean {
+  const provided = request.headers.get("X-Admin-Secret");
+  return !!(env.ADMIN_SECRET && provided && timingSafeEqual(provided, env.ADMIN_SECRET));
+}
 
 /** POST /api/addresses — create a new email address */
 async function createAddress(request: Request, env: Env): Promise<Response> {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
 
-  // Skip rate limiting for whitelisted IPs or admin secret
-  const isWhitelisted = WHITELISTED_IPS.includes(ip);
-  const hasAdminSecret = env.ADMIN_SECRET && request.headers.get("X-Admin-Secret") === env.ADMIN_SECRET;
+  // Skip rate limiting when the admin secret is provided (for testing)
+  const isAdmin = hasAdminSecret(request, env);
 
-  if (!isWhitelisted && !hasAdminSecret) {
+  if (!isAdmin) {
     // Rate limit by IP: max 5 addresses per hour
     const ipAllowed = await checkRateLimit(
       env.DB,
@@ -126,7 +210,7 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
 
   // Rate limit by recovery email: max 10 addresses per day
   const recoveryHash = await hash(recovery_email);
-  if (!isWhitelisted && !hasAdminSecret) {
+  if (!isAdmin) {
     const emailAllowed = await checkRateLimit(
       env.DB,
       `create_email:${recoveryHash}`,
@@ -189,11 +273,19 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   const tokenHash = await hash(token);
   // recoveryHash already computed above for rate limiting
 
-  await env.DB.prepare(
-    "INSERT INTO addresses (id, local_part, domain, token_hash, recovery_hash) VALUES (?, ?, ?, ?, ?)"
-  )
-    .bind(id, local.toLowerCase(), env.DOMAIN, tokenHash, recoveryHash)
-    .run();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO addresses (id, local_part, domain, token_hash, recovery_hash) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(id, local.toLowerCase(), env.DOMAIN, tokenHash, recoveryHash)
+      .run();
+  } catch (e) {
+    // UNIQUE(local_part, domain) — lost a race with a concurrent claim
+    if (e instanceof Error && e.message.includes("UNIQUE")) {
+      return error(`${local}@${env.DOMAIN} is already taken`, 409);
+    }
+    throw e;
+  }
 
   return json(
     {
@@ -205,12 +297,15 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   );
 }
 
-/** Simple rate limiter using D1 — max attempts per address per hour */
+/** Simple rate limiter using D1 — max attempts per key per window.
+ *  When `record` is false, only checks the limit without consuming an attempt
+ *  (use recordRateLimitAttempt after the guarded action succeeds). */
 async function checkRateLimit(
   db: D1Database,
   key: string,
   maxAttempts: number,
-  windowMs: number
+  windowMs: number,
+  record = true
 ): Promise<boolean> {
   const windowStart = new Date(Date.now() - windowMs).toISOString();
 
@@ -230,13 +325,19 @@ async function checkRateLimit(
 
   if ((count?.cnt || 0) >= maxAttempts) return false;
 
-  // Record this attempt
+  if (record) {
+    await recordRateLimitAttempt(db, key);
+  }
+
+  return true;
+}
+
+/** Consume one rate-limit attempt for a key */
+async function recordRateLimitAttempt(db: D1Database, key: string): Promise<void> {
   await db
     .prepare("INSERT INTO rate_limits (key, created_at) VALUES (?, ?)")
     .bind(key, new Date().toISOString())
     .run();
-
-  return true;
 }
 
 /** POST /api/recover — request token recovery via email */
@@ -259,20 +360,30 @@ async function recoverToken(request: Request, env: Env): Promise<Response> {
   if (parts.length !== 2) return error("Invalid address format");
   const [localPart, domain] = parts;
 
-  // Rate limit: max 3 recovery attempts per address per hour
-  const allowed = await checkRateLimit(
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+
+  // Rate limit: max 10 recovery attempts per IP per hour (brute-force guard),
+  // and max 3 per address per hour
+  const ipAllowed = await checkRateLimit(
     env.DB,
-    `recover:${localPart.toLowerCase()}@${domain}`,
-    3,
+    `recover_ip:${ip}`,
+    10,
     60 * 60 * 1000
   );
-  if (!allowed) {
+  const addrAllowed =
+    ipAllowed &&
+    (await checkRateLimit(
+      env.DB,
+      `recover:${localPart.toLowerCase()}@${domain}`,
+      3,
+      60 * 60 * 1000
+    ));
+  if (!ipAllowed || !addrAllowed) {
     return error("Too many recovery attempts. Try again later.", 429);
   }
 
   const GENERIC_MSG =
     "If the address and recovery email match, a new token will be sent.";
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
 
   // Look up address (include soft-deleted — allow recovery of held addresses)
   const recoveryHash = await hash(recovery_email);
@@ -366,8 +477,8 @@ async function listMail(request: Request, env: Env): Promise<Response> {
 
   const url = new URL(request.url);
   const unreadOnly = url.searchParams.get("unread") === "true";
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
-  const offset = parseInt(url.searchParams.get("offset") || "0");
+  const limit = intParam(url, "limit", 50, 100);
+  const offset = intParam(url, "offset", 0, Number.MAX_SAFE_INTEGER);
 
   let query = "SELECT id, from_addr, from_name, subject, received_at, is_read, is_archived, expires_at, message_id, thread_id, in_reply_to, references_header FROM emails WHERE address_id = ?";
   const params: unknown[] = [addr.id];
@@ -520,20 +631,33 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
   if (!body.to || !validateEmail(body.to)) {
     return error("Valid 'to' email address required");
   }
-  if (!body.subject) {
+  if (!body.subject || typeof body.subject !== "string") {
     return error("'subject' is required");
   }
-  if (!body.body_text) {
+  if (!body.body_text || typeof body.body_text !== "string") {
     return error("'body_text' is required");
   }
+  if (body.subject.length > MAX_SUBJECT_LENGTH) {
+    return error(`'subject' must be at most ${MAX_SUBJECT_LENGTH} characters`);
+  }
+  if (body.body_text.length > MAX_BODY_TEXT_LENGTH) {
+    return error(`'body_text' must be at most ${MAX_BODY_TEXT_LENGTH} characters`);
+  }
+  if (body.body_html && body.body_html.length > MAX_BODY_HTML_LENGTH) {
+    return error(`'body_html' must be at most ${MAX_BODY_HTML_LENGTH} characters`);
+  }
 
-  // Check rate limit
+  // Strip CR/LF from the subject — defense against header injection
+  const subject = body.subject.replace(/[\r\n]+/g, " ").trim();
+
+  // Check rate limit (attempt is only consumed after a successful send)
   const limit = getSendLimit(addr.plan || "free");
   const allowed = await checkRateLimit(
     env.DB,
     `send:${addr.id}`,
     limit,
-    24 * 60 * 60 * 1000 // 24 hours
+    24 * 60 * 60 * 1000, // 24 hours
+    false
   );
   if (!allowed) {
     return error(`Daily send limit reached (${limit}/day for ${addr.plan || "free"} plan)`, 429);
@@ -577,7 +701,7 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
   const result = await sendViaResend(env.RESEND_API_KEY, {
     from: fromAddr,
     to: body.to,
-    subject: body.subject,
+    subject,
     text: body.body_text,
     html: body.body_html,
     headers: {
@@ -589,6 +713,9 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
   if (!result.success) {
     return error(result.error || "Failed to send email", 500);
   }
+
+  // Send succeeded — consume a rate-limit attempt
+  await recordRateLimitAttempt(env.DB, `send:${addr.id}`);
 
   // Store sent email
   const emailId = generateId();
@@ -604,7 +731,7 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
       addr.id,
       fromAddr,
       body.to,
-      body.subject,
+      subject,
       body.body_text,
       body.body_html || null,
       messageId,
@@ -634,8 +761,8 @@ async function getSentMail(request: Request, env: Env): Promise<Response> {
   if (addr instanceof Response) return addr;
 
   const url = new URL(request.url);
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
-  const offset = parseInt(url.searchParams.get("offset") || "0");
+  const limit = intParam(url, "limit", 50, 100);
+  const offset = intParam(url, "offset", 0, Number.MAX_SAFE_INTEGER);
 
   const results = await env.DB.prepare(
     `SELECT id, to_addr, subject, received_at, message_id
@@ -660,7 +787,7 @@ async function getOtp(request: Request, env: Env): Promise<Response> {
   if (addr instanceof Response) return addr;
 
   const url = new URL(request.url);
-  const timeout = Math.min(parseInt(url.searchParams.get("timeout") || "0"), 30000); // Max 30s
+  const timeout = intParam(url, "timeout", 0, 30000); // Max 30s
   const since = url.searchParams.get("since"); // ISO timestamp to only get newer emails
   const from = url.searchParams.get("from"); // Filter by sender domain/address
 
@@ -681,8 +808,8 @@ async function getOtp(request: Request, env: Env): Promise<Response> {
     }
 
     if (from) {
-      query += " AND from_addr LIKE ?";
-      params.push(`%${from}%`);
+      query += " AND from_addr LIKE ? ESCAPE '\\'";
+      params.push(`%${escapeLike(from)}%`);
     }
 
     query += " ORDER BY received_at DESC LIMIT 1";
@@ -730,68 +857,64 @@ async function listThreads(request: Request, env: Env): Promise<Response> {
   if (addr instanceof Response) return addr;
 
   const url = new URL(request.url);
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
-  const offset = parseInt(url.searchParams.get("offset") || "0");
+  const limit = intParam(url, "limit", 20, 100);
+  const offset = intParam(url, "offset", 0, Number.MAX_SAFE_INTEGER);
 
-  // Get latest email per thread
+  // Latest message per thread in a single query (avoids N+1)
   const threads = await env.DB.prepare(`
     SELECT
-      thread_id,
-      MAX(received_at) as last_message_at,
-      COUNT(*) as message_count,
-      SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread_count
-    FROM emails
-    WHERE address_id = ? AND thread_id IS NOT NULL AND is_archived = 0
-    GROUP BY thread_id
-    ORDER BY last_message_at DESC
-    LIMIT ? OFFSET ?
+      t.thread_id,
+      t.last_message_at,
+      t.message_count,
+      t.unread_count,
+      e.id, e.from_addr, e.from_name, e.to_addr, e.subject, e.direction, e.received_at
+    FROM (
+      SELECT
+        thread_id,
+        MAX(received_at) as last_message_at,
+        COUNT(*) as message_count,
+        SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread_count
+      FROM emails
+      WHERE address_id = ? AND thread_id IS NOT NULL AND is_archived = 0
+      GROUP BY thread_id
+      ORDER BY last_message_at DESC
+      LIMIT ? OFFSET ?
+    ) t
+    JOIN emails e
+      ON e.address_id = ? AND e.thread_id = t.thread_id AND e.received_at = t.last_message_at
+    GROUP BY t.thread_id
+    ORDER BY t.last_message_at DESC
   `)
-    .bind(addr.id, limit, offset)
+    .bind(addr.id, limit, offset, addr.id)
     .all<{
       thread_id: string;
       last_message_at: string;
       message_count: number;
       unread_count: number;
+      id: string;
+      from_addr: string;
+      from_name: string | null;
+      to_addr: string | null;
+      subject: string | null;
+      direction: string;
+      received_at: string;
     }>();
 
-  // Get preview for each thread (latest message)
-  const threadPreviews = await Promise.all(
-    (threads.results || []).map(async (t) => {
-      const latest = await env.DB.prepare(`
-        SELECT id, from_addr, from_name, to_addr, subject, direction, received_at
-        FROM emails
-        WHERE address_id = ? AND thread_id = ?
-        ORDER BY received_at DESC
-        LIMIT 1
-      `)
-        .bind(addr.id, t.thread_id)
-        .first<{
-          id: string;
-          from_addr: string;
-          from_name: string | null;
-          to_addr: string | null;
-          subject: string;
-          direction: string;
-          received_at: string;
-        }>();
-
-      return {
-        thread_id: t.thread_id,
-        subject: latest?.subject || "(no subject)",
-        last_message: {
-          id: latest?.id,
-          from_addr: latest?.from_addr,
-          from_name: latest?.from_name,
-          to_addr: latest?.to_addr,
-          direction: latest?.direction,
-          received_at: latest?.received_at,
-        },
-        message_count: t.message_count,
-        unread_count: t.unread_count,
-        last_message_at: t.last_message_at,
-      };
-    })
-  );
+  const threadPreviews = (threads.results || []).map((t) => ({
+    thread_id: t.thread_id,
+    subject: t.subject || "(no subject)",
+    last_message: {
+      id: t.id,
+      from_addr: t.from_addr,
+      from_name: t.from_name,
+      to_addr: t.to_addr,
+      direction: t.direction,
+      received_at: t.received_at,
+    },
+    message_count: t.message_count,
+    unread_count: t.unread_count,
+    last_message_at: t.last_message_at,
+  }));
 
   return json({
     threads: threadPreviews,
@@ -870,7 +993,7 @@ async function searchMail(request: Request, env: Env): Promise<Response> {
   const q = url.searchParams.get("q") || "";
   const from = url.searchParams.get("from");
   const hasOtp = url.searchParams.get("has_otp");
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
+  const limit = intParam(url, "limit", 20, 100);
 
   if (!q && !from && hasOtp === null) {
     return error("At least one search parameter required: q, from, or has_otp");
@@ -884,14 +1007,15 @@ async function searchMail(request: Request, env: Env): Promise<Response> {
   const params: unknown[] = [addr.id];
 
   if (q) {
-    query += " AND (subject LIKE ? OR body_text LIKE ? OR from_addr LIKE ?)";
-    const searchTerm = `%${q}%`;
+    query +=
+      " AND (subject LIKE ? ESCAPE '\\' OR body_text LIKE ? ESCAPE '\\' OR from_addr LIKE ? ESCAPE '\\')";
+    const searchTerm = `%${escapeLike(q)}%`;
     params.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (from) {
-    query += " AND from_addr LIKE ?";
-    params.push(`%${from}%`);
+    query += " AND from_addr LIKE ? ESCAPE '\\'";
+    params.push(`%${escapeLike(from)}%`);
   }
 
   if (hasOtp === "true") {
@@ -962,13 +1086,9 @@ async function setWebhook(request: Request, env: Env): Promise<Response> {
     return error("url is required");
   }
 
-  try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return error("url must be http or https");
-    }
-  } catch {
-    return error("Invalid url format");
+  const urlError = validateWebhookUrl(url);
+  if (urlError) {
+    return error(urlError);
   }
 
   // Generate secret if not provided
@@ -1010,9 +1130,11 @@ async function deleteAddress(request: Request, env: Env): Promise<Response> {
   const now = new Date();
   const heldUntil = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Soft-delete: mark as deleted, hold for 14 days so the same owner can reclaim
+  // Soft-delete: mark as deleted, hold for 14 days so the same owner can reclaim.
+  // Webhook config is cleared so a later reactivation doesn't silently resume
+  // deliveries to a forgotten endpoint.
   await env.DB.prepare(
-    "UPDATE addresses SET deleted_at = ?, held_until = ?, status = 'disabled' WHERE id = ?"
+    "UPDATE addresses SET deleted_at = ?, held_until = ?, status = 'disabled', webhook_url = NULL, webhook_secret = NULL WHERE id = ?"
   )
     .bind(now.toISOString(), heldUntil, addr.id)
     .run();
@@ -1061,10 +1183,18 @@ function matchRoute(
   if (method === "GET" && pathname === "/api/mail/sent")
     return { handler: "getSentMail" };
 
-  // /api/mail/threads/:id route (must come before generic /api/mail/:id)
-  const threadMatch = pathname.match(/^\/api\/mail\/threads\/([a-f0-9-]+)$/);
+  // /api/mail/threads/:id route (must come before generic /api/mail/:id).
+  // Thread IDs are often RFC 5322 Message-IDs (e.g. "<123.abc@domain>"), so
+  // accept any URL-encoded segment, not just UUID characters.
+  const threadMatch = pathname.match(/^\/api\/mail\/threads\/([^/]+)$/);
   if (threadMatch && method === "GET") {
-    return { handler: "getThread", params: { id: threadMatch[1] } };
+    let id = threadMatch[1];
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      // Keep the raw segment if it isn't valid percent-encoding
+    }
+    return { handler: "getThread", params: { id } };
   }
 
   // /api/mail/:id routes
@@ -1082,6 +1212,18 @@ function matchRoute(
 
 // ── Main Export ──────────────────────────────────────────
 
+/** Add CORS headers to a response (tokens are sent via header, not cookies,
+ *  so a permissive origin does not enable cross-site credential use) */
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("X-Content-Type-Options", "nosniff");
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // CORS preflight
@@ -1091,6 +1233,7 @@ export default {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Authorization, Content-Type",
+          "Access-Control-Max-Age": "86400",
         },
       });
     }
@@ -1101,22 +1244,21 @@ export default {
     if (!route) {
       // Health check
       if (url.pathname === "/health") {
-        return json({ service: "shellmail", status: "ok", domain: env.DOMAIN });
+        return withCors(json({ service: "shellmail", status: "ok", domain: env.DOMAIN }));
       }
-      // Admin stats (protected by secret)
+      // Admin stats — secret must be sent via header (query strings end up in logs)
       if (url.pathname === "/api/admin/stats") {
-        const secret = url.searchParams.get("secret");
-        if (secret !== env.ADMIN_SECRET) {
-          return error("Unauthorized", 401);
+        if (!hasAdminSecret(request, env)) {
+          return withCors(error("Unauthorized", 401));
         }
         const stats = await getStats(env);
-        return json(stats);
+        return withCors(json(stats));
       }
       // Docs redirect to landing page API section
       if (url.pathname === "/docs") {
         return Response.redirect(new URL("/#api-docs", url.origin).toString(), 302);
       }
-      return error("Not found", 404);
+      return withCors(error("Not found", 404));
     }
 
     try {
@@ -1175,16 +1317,10 @@ export default {
           response = error("Not found", 404);
       }
 
-      // Add CORS headers
-      const headers = new Headers(response.headers);
-      headers.set("Access-Control-Allow-Origin", "*");
-      return new Response(response.body, {
-        status: response.status,
-        headers,
-      });
+      return withCors(response);
     } catch (e) {
       console.error("Unhandled error:", e);
-      return error("Internal server error", 500);
+      return withCors(error("Internal server error", 500));
     }
   },
 } satisfies ExportedHandler<Env>;

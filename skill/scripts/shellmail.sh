@@ -57,15 +57,12 @@ case "$cmd" in
     LIMIT="50"
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --unread) UNREAD="?unread=true"; shift ;;
+        --unread) UNREAD="unread=true&"; shift ;;
         --limit) LIMIT="$2"; shift 2 ;;
         *) shift ;;
       esac
     done
-    curl -sf "$API_URL/api/mail${UNREAD}&limit=${LIMIT}" \
-      -H "$(auth_header)" 2>/dev/null || \
-    curl -sf "$API_URL/api/mail${UNREAD}${UNREAD:+&}${UNREAD:-?}limit=${LIMIT}" \
-      -H "$(auth_header)"
+    curl -sf "$API_URL/api/mail?${UNREAD}limit=${LIMIT}" -H "$(auth_header)"
     ;;
 
   read)

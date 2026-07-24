@@ -23,6 +23,135 @@ function calculateExpiresAt(plan: string): string {
   return expiresAt.toISOString();
 }
 
+/** Max stored body size per part (D1 rows are limited to ~2MB total) */
+const MAX_BODY_LENGTH = 512 * 1024;
+
+/** Split a raw MIME entity into its header block and body.
+ *  Handles both CRLF and bare-LF line endings. */
+function splitHeadersBody(raw: string): { headers: string; body: string } {
+  const crlf = raw.indexOf("\r\n\r\n");
+  const lf = raw.indexOf("\n\n");
+
+  let index = -1;
+  let separatorLength = 0;
+  if (crlf !== -1 && (lf === -1 || crlf <= lf)) {
+    index = crlf;
+    separatorLength = 4;
+  } else if (lf !== -1) {
+    index = lf;
+    separatorLength = 2;
+  }
+
+  if (index === -1) return { headers: "", body: raw };
+  return {
+    headers: raw.slice(0, index),
+    body: raw.slice(index + separatorLength),
+  };
+}
+
+/** Get a (possibly folded) header value from a raw header block */
+function getRawHeader(headers: string, name: string): string | null {
+  const match = headers.match(
+    new RegExp(`^${name}:[ \\t]*((?:.*(?:\\r?\\n[ \\t].*)*))`, "im")
+  );
+  return match ? match[1].replace(/\r?\n[ \t]+/g, " ").trim() : null;
+}
+
+/** Decode a quoted-printable string to UTF-8 text */
+function decodeQuotedPrintable(input: string): string {
+  const stripped = input.replace(/=\r?\n/g, ""); // soft line breaks
+  const bytes: number[] = [];
+  for (let i = 0; i < stripped.length; i++) {
+    if (
+      stripped[i] === "=" &&
+      /^[0-9A-Fa-f]{2}$/.test(stripped.slice(i + 1, i + 3))
+    ) {
+      bytes.push(parseInt(stripped.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(stripped.charCodeAt(i) & 0xff);
+    }
+  }
+  return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
+}
+
+/** Decode a base64 string to text using the given charset (defaults to UTF-8) */
+function decodeBase64(input: string, charset = "utf-8"): string {
+  const binary = atob(input.replace(/\s+/g, ""));
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder(charset).decode(bytes);
+}
+
+/** Decode a MIME entity body according to its Content-Transfer-Encoding */
+function decodeBody(body: string, headers: string): string {
+  const encoding = getRawHeader(headers, "content-transfer-encoding")?.toLowerCase();
+  try {
+    if (encoding === "base64") return decodeBase64(body);
+    if (encoding === "quoted-printable") return decodeQuotedPrintable(body);
+  } catch {
+    // Fall through to the raw body if decoding fails
+  }
+  return body;
+}
+
+/** Decode RFC 2047 encoded-words in a header value (e.g. "=?UTF-8?B?...?=") */
+function decodeMimeWords(value: string): string {
+  // Whitespace between adjacent encoded-words is ignored per RFC 2047
+  const joined = value.replace(/(\?=)\s+(=\?)/g, "$1$2");
+  return joined.replace(
+    /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,
+    (match, charset: string, enc: string, data: string) => {
+      try {
+        if (enc.toUpperCase() === "B") {
+          return decodeBase64(data, charset.toLowerCase());
+        }
+        // Q-encoding: underscores are spaces, then quoted-printable
+        return decodeQuotedPrintable(data.replace(/_/g, " "));
+      } catch {
+        return match;
+      }
+    }
+  );
+}
+
+/** Recursively extract text/plain and text/html parts from a multipart body */
+function extractParts(
+  body: string,
+  contentTypeHeader: string,
+  depth = 0
+): { text: string | null; html: string | null } {
+  if (depth > 3) return { text: null, html: null };
+
+  const boundaryMatch = contentTypeHeader.match(/boundary="?([^";\r\n]+)"?/i);
+  if (!boundaryMatch) return { text: null, html: null };
+
+  let text: string | null = null;
+  let html: string | null = null;
+
+  const segments = body.split(`--${boundaryMatch[1]}`);
+  // First segment is the preamble; a segment starting with "--" is the terminator
+  for (const segment of segments.slice(1)) {
+    if (segment.startsWith("--")) break;
+
+    const part = splitHeadersBody(segment.replace(/^\r?\n/, ""));
+    const partType = (
+      getRawHeader(part.headers, "content-type") || "text/plain"
+    ).toLowerCase();
+
+    if (partType.startsWith("multipart/")) {
+      const nested = extractParts(part.body, part.headers, depth + 1);
+      text = text || nested.text;
+      html = html || nested.html;
+    } else if (partType.startsWith("text/plain") && !text) {
+      text = decodeBody(part.body, part.headers).trim();
+    } else if (partType.startsWith("text/html") && !html) {
+      html = decodeBody(part.body, part.headers).trim();
+    }
+  }
+
+  return { text, html };
+}
+
 /** Parse email stream into usable parts */
 async function parseEmail(message: ForwardableEmailMessage): Promise<{
   from: string;
@@ -38,54 +167,39 @@ async function parseEmail(message: ForwardableEmailMessage): Promise<{
 }> {
   const from = message.from;
   const to = message.to;
-  const subject = message.headers.get("subject") || "(no subject)";
+  const subject = decodeMimeWords(message.headers.get("subject") || "(no subject)");
 
-  // Read the raw email
+  // Read the raw email and split into headers / body
   const rawEmail = await new Response(message.raw).text();
+  const { headers: rawHeaders, body: rawBody } = splitHeadersBody(rawEmail);
 
-  // Extract headers (everything before first double newline)
-  const headerEnd = rawEmail.indexOf("\r\n\r\n") || rawEmail.indexOf("\n\n");
-  const rawHeaders = headerEnd > -1 ? rawEmail.substring(0, headerEnd) : "";
-
-  // Basic parser — extract text and html parts
   let bodyText: string | null = null;
   let bodyHtml: string | null = null;
 
   const contentType = message.headers.get("content-type") || "";
 
   if (contentType.includes("multipart")) {
-    // Extract boundary
-    const boundaryMatch = contentType.match(/boundary="?([^";\s]+)"?/);
-    if (boundaryMatch) {
-      const boundary = boundaryMatch[1];
-      const parts = rawEmail.split(`--${boundary}`);
-
-      for (const part of parts) {
-        if (part.includes("Content-Type: text/plain")) {
-          const bodyStart = part.indexOf("\r\n\r\n") || part.indexOf("\n\n");
-          if (bodyStart > -1) {
-            bodyText = part.substring(bodyStart + 4).trim();
-          }
-        } else if (part.includes("Content-Type: text/html")) {
-          const bodyStart = part.indexOf("\r\n\r\n") || part.indexOf("\n\n");
-          if (bodyStart > -1) {
-            bodyHtml = part.substring(bodyStart + 4).trim();
-          }
-        }
-      }
-    }
+    const extracted = extractParts(rawBody, contentType);
+    bodyText = extracted.text;
+    bodyHtml = extracted.html;
   } else if (contentType.includes("text/html")) {
-    const bodyStart = rawEmail.indexOf("\r\n\r\n") || rawEmail.indexOf("\n\n");
-    bodyHtml = bodyStart > -1 ? rawEmail.substring(bodyStart + 4).trim() : rawEmail;
+    bodyHtml = decodeBody(rawBody, rawHeaders).trim();
   } else {
     // Default to plain text
-    const bodyStart = rawEmail.indexOf("\r\n\r\n") || rawEmail.indexOf("\n\n");
-    bodyText = bodyStart > -1 ? rawEmail.substring(bodyStart + 4).trim() : rawEmail;
+    bodyText = decodeBody(rawBody, rawHeaders).trim();
+  }
+
+  // Cap stored body sizes to stay well under D1's row limit
+  if (bodyText && bodyText.length > MAX_BODY_LENGTH) {
+    bodyText = bodyText.slice(0, MAX_BODY_LENGTH);
+  }
+  if (bodyHtml && bodyHtml.length > MAX_BODY_LENGTH) {
+    bodyHtml = bodyHtml.slice(0, MAX_BODY_LENGTH);
   }
 
   // Parse display name from From header
   const fromMatch = from.match(/^"?(.+?)"?\s*<.+>$/);
-  const fromName = fromMatch ? fromMatch[1].trim() : null;
+  const fromName = fromMatch ? decodeMimeWords(fromMatch[1].trim()) : null;
 
   // Extract Message-ID and threading headers
   const messageId = message.headers.get("message-id") || null;
@@ -203,9 +317,10 @@ export default {
       )
       .run();
 
+    // Note: never log the OTP code itself — worker logs are not a safe place for secrets
     console.log(
-      `Stored email ${emailId} for ${parsed.to} from ${parsed.from}: ${parsed.subject}` +
-      (otp.code ? ` [OTP: ${otp.code}]` : '') +
+      `Stored email ${emailId} for ${parsed.to} from ${parsed.from}` +
+      (otp.code ? ` [OTP detected]` : '') +
       (otp.link ? ` [Link detected]` : '')
     );
 
