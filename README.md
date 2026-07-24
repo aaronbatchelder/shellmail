@@ -333,9 +333,11 @@ ShellMail is designed so you never lose your preferred address:
 - **Token-per-address** — Each address has its own bearer token, isolated from others
 - **Hashed storage** — Tokens and recovery emails are SHA-256 hashed, never stored plaintext
 - **Recovery via email only** — Lost tokens sent to recovery email, never in API responses
-- **Rate limiting** — Recovery endpoint: 3 attempts per address per hour
+- **Rate limiting** — Recovery endpoint: 3 attempts per address per hour, plus a per-IP limit
 - **Anti-enumeration** — Recovery responses are identical whether address exists or not
 - **Webhook signatures** — HMAC-SHA256 signed payloads
+- **Webhook target validation** — URLs pointing at localhost, private IP ranges, or cloud metadata endpoints are rejected
+- **Send hardening** — Subject/body size limits and CR/LF stripping to prevent header injection
 
 ## Data Retention
 
