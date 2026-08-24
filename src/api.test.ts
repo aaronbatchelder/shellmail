@@ -1190,6 +1190,256 @@ describe("404", () => {
   });
 });
 
+// ── Security hardening ───────────────────────────────────
+
+describe("Admin stats auth", () => {
+  it("rejects when no ADMIN_SECRET is configured", async () => {
+    const { status } = await call(req("/api/admin/stats"));
+    expect(status).toBe(401);
+  });
+
+  it("rejects the legacy query-param secret", async () => {
+    (env as any).ADMIN_SECRET = "topsecret";
+    try {
+      const { status } = await call(req("/api/admin/stats?secret=topsecret"));
+      expect(status).toBe(401);
+    } finally {
+      (env as any).ADMIN_SECRET = undefined;
+    }
+  });
+
+  it("accepts the secret via X-Admin-Secret header", async () => {
+    (env as any).ADMIN_SECRET = "topsecret";
+    try {
+      const { status, body } = await call(
+        req("/api/admin/stats", { headers: { "X-Admin-Secret": "topsecret" } })
+      );
+      expect(status).toBe(200);
+      expect(body).toHaveProperty("total_addresses");
+    } finally {
+      (env as any).ADMIN_SECRET = undefined;
+    }
+  });
+
+  it("rejects a wrong header secret", async () => {
+    (env as any).ADMIN_SECRET = "topsecret";
+    try {
+      const { status } = await call(
+        req("/api/admin/stats", { headers: { "X-Admin-Secret": "wrong" } })
+      );
+      expect(status).toBe(401);
+    } finally {
+      (env as any).ADMIN_SECRET = undefined;
+    }
+  });
+});
+
+describe("Webhook URL validation (SSRF guard)", () => {
+  let token: string;
+
+  beforeEach(async () => {
+    const result = await createTestAddress("ssrfuser");
+    token = result.token;
+  });
+
+  const blocked = [
+    "http://localhost/hook",
+    "http://127.0.0.1/hook",
+    "http://10.0.0.5/hook",
+    "http://172.16.1.1/hook",
+    "http://192.168.1.1/hook",
+    "http://169.254.169.254/latest/meta-data",
+    "http://metadata.internal/hook",
+    "http://foo.local/hook",
+    "http://[::1]/hook",
+  ];
+
+  for (const url of blocked) {
+    it(`rejects ${url}`, async () => {
+      const { status } = await call(put("/api/webhook", { url }, token));
+      expect(status).toBe(400);
+    });
+  }
+
+  it("accepts a normal public URL", async () => {
+    const { status } = await call(
+      put("/api/webhook", { url: "https://example.com/hook" }, token)
+    );
+    expect(status).toBe(200);
+  });
+});
+
+describe("Input hardening", () => {
+  it("handles a non-numeric limit gracefully", async () => {
+    const { token } = await createTestAddress("nanlimit");
+    const { status } = await call(req("/api/mail?limit=abc&offset=xyz", { token }));
+    expect(status).toBe(200);
+  });
+
+  it("rejects oversized send subject", async () => {
+    (env as any).RESEND_API_KEY = "re_test";
+    try {
+      const { token } = await createTestAddress("bigsubject");
+      const { status, body } = await call(
+        post(
+          "/api/mail/send",
+          { to: "a@b.com", subject: "x".repeat(501), body_text: "hi" },
+          { token }
+        )
+      );
+      expect(status).toBe(400);
+      expect(body.error).toContain("subject");
+    } finally {
+      (env as any).RESEND_API_KEY = undefined;
+    }
+  });
+
+  it("strips CR/LF from send subject (header injection guard)", async () => {
+    (env as any).RESEND_API_KEY = "re_test";
+    const originalFetch = globalThis.fetch;
+    let captured: any;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("api.resend.com")) {
+        captured = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ id: "mock" }), { status: 200 });
+      }
+      return originalFetch(input, init);
+    };
+    try {
+      const { token } = await createTestAddress("crlfsubject");
+      const { status } = await call(
+        post(
+          "/api/mail/send",
+          { to: "a@b.com", subject: "Hello\r\nBcc: evil@x.com", body_text: "hi" },
+          { token }
+        )
+      );
+      expect(status).toBe(201);
+      expect(captured.subject).not.toContain("\r");
+      expect(captured.subject).not.toContain("\n");
+    } finally {
+      (env as any).RESEND_API_KEY = undefined;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not consume send quota when the provider errors", async () => {
+    (env as any).RESEND_API_KEY = "re_test";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("api.resend.com")) {
+        return new Response("error", { status: 500 });
+      }
+      return originalFetch(input);
+    };
+    try {
+      const { token } = await createTestAddress("failedsend");
+      const { status } = await call(
+        post(
+          "/api/mail/send",
+          { to: "a@b.com", subject: "Hi", body_text: "hi" },
+          { token }
+        )
+      );
+      expect(status).toBe(500);
+
+      const row = await env.DB.prepare(
+        "SELECT COUNT(*) as cnt FROM rate_limits WHERE key LIKE 'send:%'"
+      ).first<{ cnt: number }>();
+      expect(row!.cnt).toBe(0);
+    } finally {
+      (env as any).RESEND_API_KEY = undefined;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("treats LIKE wildcards in search literally", async () => {
+    const { token } = await createTestAddress("likesearch");
+    const addressId = await getAddressId(token);
+    await insertTestEmail(addressId, { subject: "abc" });
+    await insertTestEmail(addressId, { subject: "a%c" });
+
+    const { body } = await call(req("/api/mail/search?q=a%25c", { token }));
+    expect(body.count).toBe(1);
+    expect(body.emails[0].subject).toBe("a%c");
+  });
+
+  it("rejects new reserved local parts", async () => {
+    const { status } = await call(
+      post("/api/addresses", { local: "security", recovery_email: "x@y.com" })
+    );
+    expect(status).toBe(400);
+  });
+
+  it("rejects consecutive dots in local part", async () => {
+    const { status } = await call(
+      post("/api/addresses", { local: "a..b", recovery_email: "x@y.com" })
+    );
+    expect(status).toBe(400);
+  });
+
+  it("includes CORS headers on error responses", async () => {
+    const ctx = createExecutionContext();
+    const resp = await worker.fetch(
+      new Request("https://shellmail.ai/api/nonexistent"),
+      env,
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+    expect(resp.status).toBe(404);
+    expect(resp.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});
+
+// ── Threads ──────────────────────────────────────────────
+
+describe("Threads", () => {
+  let token: string;
+  let addressId: string;
+
+  beforeEach(async () => {
+    const result = await createTestAddress("threaduser");
+    token = result.token;
+    addressId = await getAddressId(token);
+  });
+
+  it("lists threads with latest-message preview", async () => {
+    const threadId = "<123.abc@shellmail.ai>";
+    await insertTestEmail(addressId, { subject: "First" });
+    await env.DB.prepare(
+      "UPDATE emails SET thread_id = ?, received_at = '2026-01-01T00:00:00Z' WHERE subject = 'First'"
+    ).bind(threadId).run();
+    const secondId = await insertTestEmail(addressId, { subject: "Second" });
+    await env.DB.prepare(
+      "UPDATE emails SET thread_id = ?, received_at = '2026-01-02T00:00:00Z' WHERE id = ?"
+    ).bind(threadId, secondId).run();
+
+    const { status, body } = await call(req("/api/mail/threads", { token }));
+    expect(status).toBe(200);
+    expect(body.count).toBe(1);
+    expect(body.threads[0].message_count).toBe(2);
+    expect(body.threads[0].subject).toBe("Second");
+    expect(body.threads[0].last_message.id).toBe(secondId);
+  });
+
+  it("fetches a thread by URL-encoded Message-ID thread id", async () => {
+    const threadId = "<123.abc@shellmail.ai>";
+    const emailId = await insertTestEmail(addressId, { subject: "Threaded" });
+    await env.DB.prepare("UPDATE emails SET thread_id = ? WHERE id = ?")
+      .bind(threadId, emailId)
+      .run();
+
+    const { status, body } = await call(
+      req(`/api/mail/threads/${encodeURIComponent(threadId)}`, { token })
+    );
+    expect(status).toBe(200);
+    expect(body.thread_id).toBe(threadId);
+    expect(body.messages).toHaveLength(1);
+  });
+});
+
 // ── Router ───────────────────────────────────────────────
 
 describe("Router", () => {

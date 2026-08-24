@@ -45,6 +45,17 @@ export function extractToken(request: Request): string | null {
   return match ? match[1] : null;
 }
 
+/** Constant-time string comparison — avoids leaking secret prefixes via timing */
+export function timingSafeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const ab = encoder.encode(a);
+  const bb = encoder.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+
 /** Validate local part of email address */
 export function validateLocalPart(local: string): string | null {
   if (!local || typeof local !== "string") return "local part is required";
@@ -52,9 +63,12 @@ export function validateLocalPart(local: string): string | null {
   if (local.length > 64) return "local part must be at most 64 characters";
   if (!/^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/i.test(local))
     return "local part must be alphanumeric (dots, hyphens, underscores allowed)";
+  if (local.includes(".."))
+    return "local part cannot contain consecutive dots";
   // Reserved words
   const reserved = [
     "admin",
+    "administrator",
     "postmaster",
     "abuse",
     "hostmaster",
@@ -64,6 +78,17 @@ export function validateLocalPart(local: string): string | null {
     "no-reply",
     "mailer-daemon",
     "root",
+    "security",
+    "help",
+    "info",
+    "billing",
+    "sales",
+    "contact",
+    "legal",
+    "privacy",
+    "dmarc",
+    "spf",
+    "shellmail",
   ];
   if (reserved.includes(local.toLowerCase()))
     return `"${local}" is reserved`;
@@ -72,5 +97,6 @@ export function validateLocalPart(local: string): string | null {
 
 /** Validate email format (basic) */
 export function validateEmail(email: string): boolean {
+  if (typeof email !== "string" || email.length > 320) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
