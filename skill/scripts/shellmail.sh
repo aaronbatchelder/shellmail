@@ -21,11 +21,11 @@ Commands:
   mark-read <id>            Mark email as read
   mark-unread <id>          Mark email as unread
   archive <id>              Archive an email
-  delete <id>               Delete an email
+  delete <id> --confirm     Permanently delete an email (irreversible; requires --confirm)
   addresses                 Show current address info
   create <local> <email>    Create a new address (local@shellmail.ai)
   recover <address> <email> Recover token for an address
-  delete-address            Delete address and all mail
+  delete-address --confirm  Delete address AND all mail (irreversible; requires --confirm)
   health                    Check API health
 
 Environment:
@@ -50,6 +50,18 @@ urlencode() {
 
 cmd="${1:-}"
 shift || true
+
+# All commands except create/recover/health require a token; fail fast before
+# any network call ($(auth_header) runs in a subshell, so its exit can't stop us)
+case "$cmd" in
+  create|recover|health|"") ;;
+  *)
+    if [ -z "$TOKEN" ]; then
+      echo "Error: SHELLMAIL_TOKEN not set" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 case "$cmd" in
   inbox)
@@ -126,8 +138,24 @@ case "$cmd" in
     ;;
 
   delete)
-    [ -z "${1:-}" ] && { echo "Usage: shellmail delete <id>" >&2; exit 1; }
-    curl -sf -X DELETE "$API_URL/api/mail/$(urlencode "$1")" -H "$(auth_header)"
+    ID=""
+    CONFIRM=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --confirm) CONFIRM="yes"; shift ;;
+        *) ID="$1"; shift ;;
+      esac
+    done
+    [ -z "$ID" ] && { echo "Usage: shellmail delete <id> --confirm" >&2; exit 1; }
+    if [ -z "$CONFIRM" ]; then
+      cat >&2 <<WARN
+WARNING: 'delete' PERMANENTLY removes email $ID. This cannot be undone.
+Confirm with the user before proceeding, then re-run:
+  shellmail delete $ID --confirm
+WARN
+      exit 1
+    fi
+    curl -sf -X DELETE "$API_URL/api/mail/$(urlencode "$ID")" -H "$(auth_header)"
     ;;
 
   addresses)
@@ -162,6 +190,17 @@ case "$cmd" in
     ;;
 
   delete-address)
+    if [ "${1:-}" != "--confirm" ]; then
+      cat >&2 <<WARN
+WARNING: 'delete-address' PERMANENTLY deletes this ShellMail address AND all
+of its mail, and revokes the token. Deleted addresses are held for 14 days and
+can only be reclaimed via the recovery email on file.
+This is a destructive, account-level action. Get explicit confirmation from
+the user before proceeding, then re-run:
+  shellmail delete-address --confirm
+WARN
+      exit 1
+    fi
     curl -sf -X DELETE "$API_URL/api/addresses/me" -H "$(auth_header)"
     ;;
 
