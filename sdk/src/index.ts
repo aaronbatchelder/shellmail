@@ -260,7 +260,9 @@ export class ShellMail {
   }
 
   /**
-   * Delete an email
+   * PERMANENTLY delete an email. This is a hard delete — there is no trash,
+   * undo, or recovery. (Unlike deleteAccount(), which holds the address for
+   * 14 days, deleted emails are gone immediately.)
    */
   async deleteEmail(emailId: string): Promise<{ ok: boolean }> {
     return this.request("DELETE", `/api/mail/${emailId}`);
@@ -433,9 +435,10 @@ export class ShellMail {
   // ── Account ──────────────────────────────────────────
 
   /**
-   * Delete your address and all emails.
-   * The address is held for 14 days — reclaim it by calling
-   * ShellMail.createAddress() with the same local part and recovery email.
+   * Delete your address and PERMANENTLY destroy all of its emails.
+   * The address itself is held for 14 days — reclaim it by calling
+   * ShellMail.createAddress() with the same local part and recovery email —
+   * but the emails are hard-deleted immediately and cannot be recovered.
    */
   async deleteAccount(): Promise<{ ok: boolean; deleted: string; held_until: string }> {
     return this.request("DELETE", "/api/addresses/me");

@@ -54,13 +54,16 @@ That's it. You now have `yourname@shellmail.ai` ready to send and receive mail.
 
 Your AI agent needs to verify accounts, receive notifications, and get OTP codes. But email is complex—SMTP, IMAP, spam filters, server management.
 
-ShellMail is email reduced to a REST API:
+ShellMail is a full email client reduced to a REST API — receiving, OTP extraction, search, sending, replying, and mailbox management:
 
 - **Create address** → Get a token
 - **Receive mail** → We store it
 - **Poll or webhook** → Your agent gets it
+- **Send & reply** → Outbound mail from your agent's address
 
 No servers. No SMTP. No complexity.
+
+> **A note on safety:** the token grants full access to the inbox — contents, OTPs, sending, and deletion. Destructive operations (deleting mail, deleting the address) are irreversible and require explicit confirmation in the CLI (`--yes`), the skill (`--confirm`), and the MCP server (`confirm: true`).
 
 ## Features
 

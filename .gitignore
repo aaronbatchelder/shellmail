@@ -2,3 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+
+# Point-in-time test run artifacts (may contain live tokens/addresses)
+SMOKE_TEST.md
+TEST_REPORT.md

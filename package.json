@@ -1,7 +1,7 @@
 {
   "name": "shellmail",
   "version": "1.0.0",
-  "description": "Email for AI agents",
+  "description": "ShellMail \u2014 full email service for AI agents (Cloudflare Workers backend)",
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.19",
     "@cloudflare/workers-types": "^4.20260131.0",
