@@ -1,0 +1,11 @@
+{
+  "name": "@aaronbatchelder/shellmail",
+  "version": "1.3.0",
+  "description": "ShellMail skill bundle — full email client for AI agents (inbox, OTP extraction, search, send/reply, mailbox and address management with confirmation-gated destructive commands)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aaronbatchelder/shellmail"
+  },
+  "files": ["SKILL.md", "scripts", "openclaw.plugin.json"]
+}
