@@ -3,8 +3,30 @@
 set -euo pipefail
 
 # Config: set via env or openclaw skill config
-API_URL="${SHELLMAIL_API_URL:-https://shellmail.ai}"
+DEFAULT_API_URL="https://shellmail.ai"
+API_URL="${SHELLMAIL_API_URL:-$DEFAULT_API_URL}"
 TOKEN="${SHELLMAIL_TOKEN:-}"
+
+# Credential-redirection guard: the bearer token is only ever sent to the
+# official ShellMail origin unless the user explicitly opts in to a
+# self-hosted endpoint. Prevents a poisoned SHELLMAIL_API_URL from
+# exfiltrating the token and mailbox data to an attacker-controlled host.
+if [ "$API_URL" != "$DEFAULT_API_URL" ]; then
+  case "$API_URL" in
+    https://*) ;;
+    *) echo "Error: SHELLMAIL_API_URL must be an https:// URL" >&2; exit 1 ;;
+  esac
+  if [ "${SHELLMAIL_ALLOW_CUSTOM_API:-}" != "1" ]; then
+    cat >&2 <<WARN
+Error: SHELLMAIL_API_URL is set to a non-default endpoint:
+  $API_URL
+Authenticated requests would send your bearer token and mailbox data there.
+If this is your own trusted self-hosted ShellMail instance, set
+SHELLMAIL_ALLOW_CUSTOM_API=1 to proceed. Otherwise unset SHELLMAIL_API_URL.
+WARN
+    exit 1
+  fi
+fi
 
 usage() {
   cat <<EOF

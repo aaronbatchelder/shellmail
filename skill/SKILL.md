@@ -1,6 +1,6 @@
 ---
 name: shellmail
-version: 1.3.0
+version: 1.3.1
 description: Full email client for AI agents via the ShellMail API. Read inbox, extract OTP codes, and search messages; also send and reply to email, mark/archive/permanently delete messages, and create, recover, or delete the ShellMail address itself. Uses curl/python3 to reach the ShellMail API only. Trigger ONLY when the user explicitly asks to use ShellMail or their shellmail.ai address (e.g. "check my shellmail", "get the OTP from shellmail", "send from my shellmail address"). Do NOT trigger for generic email requests or other email providers.
 homepage: https://shellmail.ai
 source: https://github.com/aaronbatchelder/shellmail
@@ -12,7 +12,7 @@ env:
   SHELLMAIL_API_URL:
     required: false
     default: https://shellmail.ai
-    description: API base URL (only change for self-hosted instances)
+    description: API base URL. Non-default values require https and an explicit SHELLMAIL_ALLOW_CUSTOM_API=1 opt-in, so a poisoned URL cannot silently redirect the token (only change for self-hosted instances)
 metadata:
   openclaw:
     requires:
@@ -25,7 +25,7 @@ metadata:
       network:
         outbound:
           - https://shellmail.ai
-        note: All network access is limited to the ShellMail API at SHELLMAIL_API_URL (default https://shellmail.ai). No other hosts are contacted.
+        note: All network access is limited to the official ShellMail API (https://shellmail.ai). A non-default SHELLMAIL_API_URL is refused unless it is https and the user sets SHELLMAIL_ALLOW_CUSTOM_API=1 for a self-hosted instance. No other hosts are contacted.
 ---
 
 # ShellMail
