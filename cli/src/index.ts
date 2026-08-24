@@ -26,8 +26,11 @@ const program = new Command();
 
 program
   .name("shellmail")
-  .description("Email for AI agents — create addresses, check mail, extract OTPs")
-  .version("1.2.0")
+  .description(
+    "Full email client for AI agents — check mail, extract OTPs, search, send/reply, delete, and manage addresses"
+  )
+  // Keep in sync with cli/package.json
+  .version("1.4.0")
   .option("-p, --profile <name>", "Use a specific profile");
 
 // ── Setup Command ────────────────────────────────────────
@@ -569,13 +572,29 @@ program
 
 program
   .command("delete <id>")
-  .description("Delete an email")
-  .action(async (id) => {
+  .description("Permanently delete an email (irreversible)")
+  .option("-y, --yes", "Skip the confirmation prompt")
+  .action(async (id, options) => {
     const profile = getActiveProfile(program.opts().profile);
     const token = getToken(profile);
     if (!token) {
       console.error(chalk.red("No token configured. Run 'shellmail setup' first."));
       process.exit(1);
+    }
+
+    if (!options.yes) {
+      const { confirm } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message: `Permanently delete email ${id}? This cannot be undone.`,
+          default: false,
+        },
+      ]);
+      if (!confirm) {
+        console.log(chalk.yellow("\nAborted.\n"));
+        return;
+      }
     }
 
     const spinner = ora("Deleting email...").start();
@@ -616,6 +635,125 @@ program
       process.exit(1);
     }
   });
+
+// ── Auth Command ─────────────────────────────────────────
+
+program
+  .command("auth")
+  .description("Manage authentication to unlock higher send limits")
+  .addCommand(
+    new Command("verify-recovery")
+      .description("Verify recovery email to unlock 50 emails/day (free)")
+      .action(async () => {
+        const activeProfile = getActiveProfile(program.opts().profile);
+        const token = getToken(activeProfile);
+        const address = getAddress(activeProfile);
+
+        if (!token || !address) {
+          console.error(chalk.red("\nNo token found. Run `shellmail setup` first.\n"));
+          process.exit(1);
+        }
+
+        console.log(chalk.bold("\n🔐 Verify Recovery Email\n"));
+
+        // Ask for recovery email
+        const { recoveryEmail } = await inquirer.prompt([
+          {
+            type: "input",
+            name: "recoveryEmail",
+            message: "Enter your recovery email:",
+            validate: (input: string) => {
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input)) {
+                return "Enter a valid email address";
+              }
+              return true;
+            },
+          },
+        ]);
+
+        // Request OTP
+        const api = new ShellMailAPI(token);
+        const spinner = ora(`Sending verification code to ${recoveryEmail}...`).start();
+
+        try {
+          await api.requestRecoveryVerification(recoveryEmail);
+          spinner.succeed(chalk.green(`Verification code sent to ${recoveryEmail}`));
+        } catch (err) {
+          spinner.fail(chalk.red((err as Error).message));
+          process.exit(1);
+        }
+
+        // Ask for code
+        const { code } = await inquirer.prompt([
+          {
+            type: "input",
+            name: "code",
+            message: "Enter the 6-digit code:",
+            validate: (input: string) => {
+              if (!/^\d{6}$/.test(input)) {
+                return "Code must be 6 digits";
+              }
+              return true;
+            },
+          },
+        ]);
+
+        // Confirm verification
+        const confirmSpinner = ora("Verifying code...").start();
+
+        try {
+          const result = await api.confirmRecoveryVerification(code);
+          confirmSpinner.succeed(chalk.green("✓ Recovery email verified!"));
+
+          console.log(chalk.bold(`\nPlan: ${result.plan}`));
+          console.log(chalk.bold(`Daily limit: ${result.daily_limit} emails/day\n`));
+        } catch (err) {
+          confirmSpinner.fail(chalk.red((err as Error).message));
+          process.exit(1);
+        }
+      })
+  )
+  .addCommand(
+    new Command("status")
+      .description("Check authentication status and current send limit")
+      .action(async () => {
+        const activeProfile = getActiveProfile(program.opts().profile);
+        const token = getToken(activeProfile);
+        const address = getAddress(activeProfile);
+
+        if (!token || !address) {
+          console.error(chalk.red("\nNo token found. Run `shellmail setup` first.\n"));
+          process.exit(1);
+        }
+
+        console.log(chalk.bold("\n🔐 Authentication Status\n"));
+
+        const api = new ShellMailAPI(token);
+        const spinner = ora("Checking status...").start();
+
+        try {
+          const status = await api.getAuthStatus();
+          spinner.succeed(chalk.green("Status retrieved"));
+
+          console.log(chalk.bold(`Address: ${status.address}`));
+          console.log(chalk.bold(`Plan: ${status.plan}`));
+          console.log(chalk.bold(`Daily limit: ${status.daily_limit} emails/day`));
+          console.log();
+          console.log(chalk.bold("Authentication:"));
+          console.log(`  Recovery verified: ${status.authentication.recovery_verified ? chalk.green("✓") : chalk.gray("✗")}`);
+          console.log(`  OAuth provider: ${status.authentication.oauth_provider || chalk.gray("none")}`);
+          console.log(`  Authenticated at: ${status.authentication.authenticated_at || chalk.gray("never")}`);
+          console.log();
+
+          if (!status.authentication.recovery_verified && !status.authentication.oauth_provider) {
+            console.log(chalk.yellow("💡 Tip: Run `shellmail auth verify-recovery` to unlock 50 emails/day (free)\n"));
+          }
+        } catch (err) {
+          spinner.fail(chalk.red((err as Error).message));
+          process.exit(1);
+        }
+      })
+  );
 
 // ── Logout Command ───────────────────────────────────────
 

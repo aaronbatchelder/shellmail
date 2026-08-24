@@ -56,6 +56,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_inbox",
     description:
       "List emails in your ShellMail inbox. Returns email summaries with sender, subject, date, and OTP codes if present.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -76,6 +80,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_read",
     description:
       "Read the full content of a specific email by ID. Returns the complete email with body text and HTML.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -91,6 +99,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_otp",
     description:
       "Get the latest OTP/verification code from your inbox. Supports long-polling to wait for an OTP to arrive. Automatically extracts codes from verification emails.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -115,7 +127,13 @@ const TOOLS: Tool[] = [
   {
     name: "shellmail_send",
     description:
-      "Send an email from your ShellMail address. Rate limited by plan (Free: 10/day, Shell: 50/day, Reef: 100/day).",
+      "Send a real outbound email from the user's ShellMail address to any recipient. This is an irreversible external action taken on the user's behalf — only send when the user has explicitly asked, and confirm recipient/subject/body with them first. Rate limited by plan (Free: 10/day, Shell: 50/day, Reef: 100/day).",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -147,6 +165,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_search",
     description:
       "Search emails by query, sender, or OTP presence. Useful for finding specific emails.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -173,6 +195,10 @@ const TOOLS: Tool[] = [
   {
     name: "shellmail_sent",
     description: "List emails you have sent from your ShellMail address.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -186,21 +212,39 @@ const TOOLS: Tool[] = [
   },
   {
     name: "shellmail_delete",
-    description: "Delete an email by ID.",
+    description:
+      "PERMANENTLY delete an email by ID. This is a hard delete with no undo, trash, or recovery. Only call this when the user has explicitly asked to delete this specific email; tell them which email (sender/subject) will be destroyed and get their approval first. Requires confirm: true as acknowledgment.",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
         email_id: {
           type: "string",
-          description: "The ID of the email to delete",
+          description: "The ID of the email to permanently delete",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Must be true. Acknowledges the user explicitly approved permanently deleting this email.",
         },
       },
-      required: ["email_id"],
+      required: ["email_id", "confirm"],
     },
   },
   {
     name: "shellmail_mark_read",
-    description: "Mark an email as read.",
+    description: "Mark an email as read (reversible state change).",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -216,6 +260,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_threads",
     description:
       "List email threads (conversations). Shows grouped conversations with message count and unread status.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -231,6 +279,10 @@ const TOOLS: Tool[] = [
     name: "shellmail_thread",
     description:
       "Get all messages in a specific thread. Returns the full conversation in chronological order.",
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -303,6 +355,11 @@ async function handleTool(
 
     case "shellmail_delete": {
       if (!args.email_id) throw new Error("email_id is required");
+      if (args.confirm !== true) {
+        throw new Error(
+          "Deleting an email is PERMANENT and cannot be undone. Get explicit approval from the user for this specific deletion, then retry with confirm: true."
+        );
+      }
       return apiRequest("DELETE", `/api/mail/${args.email_id}`);
     }
 
@@ -331,7 +388,8 @@ async function main() {
   const server = new Server(
     {
       name: "shellmail",
-      version: "1.0.0",
+      // Keep in sync with mcp/package.json
+      version: "1.3.0",
     },
     {
       capabilities: {

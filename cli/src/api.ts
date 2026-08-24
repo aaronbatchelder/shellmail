@@ -86,6 +86,25 @@ export interface SentResponse {
   emails: SentEmailSummary[];
 }
 
+export interface AuthStatusResponse {
+  address: string;
+  plan: string;
+  daily_limit: number;
+  authentication: {
+    recovery_verified: boolean;
+    oauth_provider: string | null;
+    authenticated_at: string | null;
+  };
+}
+
+export interface VerifyRecoveryResponse {
+  ok: boolean;
+  verified: boolean;
+  plan: string;
+  daily_limit: number;
+  message: string;
+}
+
 export class ShellMailAPI {
   private token: string | null;
 
@@ -211,5 +230,21 @@ export class ShellMailAPI {
 
   async sent(limit = 20): Promise<SentResponse> {
     return this.request<SentResponse>("GET", `/api/mail/sent?limit=${limit}`);
+  }
+
+  async requestRecoveryVerification(recoveryEmail: string): Promise<{ ok: boolean; message: string; expires_in: number }> {
+    return this.request("POST", "/api/auth/verify-recovery/request", {
+      recovery_email: recoveryEmail,
+    });
+  }
+
+  async confirmRecoveryVerification(code: string): Promise<VerifyRecoveryResponse> {
+    return this.request<VerifyRecoveryResponse>("POST", "/api/auth/verify-recovery/confirm", {
+      code,
+    });
+  }
+
+  async getAuthStatus(): Promise<AuthStatusResponse> {
+    return this.request<AuthStatusResponse>("GET", "/api/auth/status");
   }
 }
