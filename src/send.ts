@@ -37,6 +37,7 @@ export interface SendOptions {
   html?: string;
   replyTo?: string;
   headers?: Record<string, string>;
+  tags?: Record<string, string>;
 }
 
 /** Send email via Resend API */
@@ -62,6 +63,10 @@ export async function sendViaResend(
 
     if (options.headers) {
       body.headers = options.headers;
+    }
+
+    if (options.tags) {
+      body.tags = options.tags;
     }
 
     const resp = await fetch("https://api.resend.com/emails", {

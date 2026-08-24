@@ -26,3 +26,5 @@ crons = ["0 3 * * *"] # Daily at 3am UTC
 # Secrets (set via `wrangler secret put`):
 # - RESEND_API_KEY: API key from resend.com for outbound email
 # - ADMIN_SECRET: Secret for admin endpoints
+# - RESEND_WEBHOOK_SECRET: Svix signing secret ("whsec_...") from the Resend
+#   webhook settings; required or /api/webhooks/resend rejects all events

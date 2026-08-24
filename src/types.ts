@@ -3,6 +3,7 @@ export interface Env {
   DOMAIN: string;
   ADMIN_SECRET?: string;
   RESEND_API_KEY?: string;
+  RESEND_WEBHOOK_SECRET?: string;
   ctx?: ExecutionContext;
 }
 
@@ -23,6 +24,14 @@ export interface Address {
   last_activity_at: string | null;
   deleted_at: string | null;
   held_until: string | null;
+  recovery_verified: number;
+  oauth_provider: string | null;
+  oauth_id: string | null;
+  authenticated_at: string | null;
+  bounce_rate_30d: number;
+  suspended: number;
+  suspension_reason: string | null;
+  ip_address: string | null;
 }
 
 export interface Email {
@@ -69,4 +78,55 @@ export interface SendEmailRequest {
   body_text: string;
   body_html?: string;
   reply_to_id?: string;
+}
+
+export type BounceType = 'hard' | 'soft' | 'complaint';
+
+export interface BounceTracking {
+  id: string;
+  address_id: string;
+  recipient: string;
+  bounce_type: BounceType;
+  reason: string | null;
+  created_at: string;
+}
+
+export type AbuseType = 'content_filter' | 'pattern_detection' | 'rate_limit' | 'bounce_rate';
+export type AbuseSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type AbuseAction = 'flagged' | 'rate_limited' | 'suspended' | 'none';
+
+export interface AbuseLog {
+  id: string;
+  address_id: string;
+  ip_address: string | null;
+  abuse_type: AbuseType;
+  severity: AbuseSeverity;
+  details: string | null;
+  action_taken: AbuseAction;
+  created_at: string;
+}
+
+export type ContentFilterType = 'keyword' | 'regex' | 'domain' | 'url_pattern' | 'pattern';
+
+export interface ContentFilter {
+  id: string;
+  pattern_type: ContentFilterType;
+  pattern: string;
+  severity: number;
+  description: string | null;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FilterResult {
+  passed: boolean;
+  score: number;
+  matches: string[];
+  action: 'allow' | 'flag' | 'reject';
+}
+
+export interface PatternDetectionResult {
+  suspicious: boolean;
+  reasons: string[];
 }

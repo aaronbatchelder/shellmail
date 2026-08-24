@@ -11,6 +11,7 @@ import {
 } from "cloudflare:test";
 import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
 import worker from "./index";
+import { hash } from "./auth";
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -214,8 +215,45 @@ beforeAll(async () => {
     `ALTER TABLE addresses ADD COLUMN held_until TEXT`,
     `CREATE TABLE IF NOT EXISTS recovery_log (
       id TEXT PRIMARY KEY, address_id TEXT, local_part TEXT NOT NULL,
-      domain TEXT NOT NULL, recovery_hash_matched INTEGER NOT NULL DEFAULT 0,
+      domain TEXT NOT NULL, recovery_hash_matched INTEGER NOT NULL DEFAULT (0),
       failure_reason TEXT, ip_address TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // 0010 anti-spam
+    `CREATE TABLE IF NOT EXISTS send_log (
+      id TEXT PRIMARY KEY, address_id TEXT NOT NULL, recipient_email TEXT NOT NULL,
+      subject TEXT, resend_email_id TEXT, bounce_type TEXT,
+      content_scan_score INTEGER, flagged INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS bounce_tracking (
+      id TEXT PRIMARY KEY, address_id TEXT NOT NULL, recipient TEXT NOT NULL,
+      bounce_type TEXT NOT NULL, reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS abuse_log (
+      id TEXT PRIMARY KEY, address_id TEXT NOT NULL, ip_address TEXT,
+      abuse_type TEXT NOT NULL, severity TEXT NOT NULL, details TEXT,
+      action_taken TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS content_filters (
+      id TEXT PRIMARY KEY, pattern_type TEXT NOT NULL, pattern TEXT NOT NULL,
+      severity INTEGER NOT NULL, description TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `ALTER TABLE addresses ADD COLUMN recovery_verified INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE addresses ADD COLUMN oauth_provider TEXT`,
+    `ALTER TABLE addresses ADD COLUMN oauth_id TEXT`,
+    `ALTER TABLE addresses ADD COLUMN authenticated_at TEXT`,
+    `ALTER TABLE addresses ADD COLUMN bounce_rate_30d REAL NOT NULL DEFAULT 0.0`,
+    `ALTER TABLE addresses ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE addresses ADD COLUMN suspension_reason TEXT`,
+    `ALTER TABLE addresses ADD COLUMN ip_address TEXT`,
+    // 0011 verification + 0012 hardening (hashed codes, attempt cap)
+    `CREATE TABLE IF NOT EXISTS verification_codes (
+      id TEXT PRIMARY KEY, address_id TEXT NOT NULL, code_hash TEXT NOT NULL,
+      purpose TEXT NOT NULL, expires_at TEXT NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
   ];
@@ -227,6 +265,28 @@ beforeAll(async () => {
       // Ignore "duplicate column" errors on re-runs
     }
   }
+
+  // Seed content filters (note: JavaScript regex, no inline flags)
+  const filters = [
+    ['cf_crypto_1', 'keyword', '(bitcoin|crypto|nft|web3).{0,20}(invest|profit|earn|guaranteed)', 75, 'Crypto investment spam'],
+    ['cf_pharma_1', 'keyword', '(viagra|cialis|pharmacy|prescription).{0,20}(cheap|discount|online)', 80, 'Pharmaceutical spam'],
+    ['cf_urgent_1', 'keyword', '(urgent|act now|limited time|expires|hurry).{0,20}(click|claim|verify)', 60, 'Urgency manipulation'],
+    ['cf_finance_1', 'keyword', '(loan|mortgage|credit|debt).{0,20}(approved|guaranteed|instant)', 65, 'Financial spam'],
+    ['cf_prize_1', 'keyword', '(won|winner|prize|congratulations|claim).{0,20}(\\$|money|cash|reward)', 70, 'Prize scam'],
+    ['cf_allcaps', 'pattern', 'SUBJECT_ALL_CAPS', 50, 'All-caps subject line'],
+    ['cf_excessive_links', 'pattern', 'EXCESSIVE_LINKS', 40, 'More than 5 links in message'],
+  ];
+
+  for (const [id, pattern_type, pattern, severity, description] of filters) {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO content_filters (id, pattern_type, pattern, severity, description, enabled)
+         VALUES (?, ?, ?, ?, ?, 1)`
+      ).bind(id, pattern_type, pattern, severity, description).run();
+    } catch {
+      // Ignore if already exists
+    }
+  }
 });
 
 beforeEach(async () => {
@@ -235,6 +295,10 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM addresses").run();
   await env.DB.prepare("DELETE FROM rate_limits").run();
   await env.DB.prepare("DELETE FROM recovery_log").run();
+  await env.DB.prepare("DELETE FROM send_log").run();
+  await env.DB.prepare("DELETE FROM bounce_tracking").run();
+  await env.DB.prepare("DELETE FROM abuse_log").run();
+  await env.DB.prepare("DELETE FROM verification_codes").run();
 });
 
 // ── Health ───────────────────────────────────────────────
@@ -1160,5 +1224,629 @@ describe("Router", () => {
       req("/api/mail/search?q=test", { token })
     );
     expect(status).toBe(200);
+  });
+});
+
+// ── Authentication Tests ─────────────────────────────────
+
+describe("Authentication Tiers", () => {
+  /** Run fn with RESEND_API_KEY set and the Resend API mocked to succeed */
+  async function withMockResend(fn: () => Promise<void>) {
+    const originalKey = env.RESEND_API_KEY;
+    const originalFetch = globalThis.fetch;
+    (env as any).RESEND_API_KEY = "re_test_key";
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("api.resend.com")) {
+        return new Response(JSON.stringify({ id: "mock-id" }), { status: 200 });
+      }
+      return originalFetch(input, init);
+    };
+    try {
+      await fn();
+    } finally {
+      (env as any).RESEND_API_KEY = originalKey;
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  describe("POST /api/auth/verify-recovery/request", () => {
+    it("sends OTP to recovery email", async () => withMockResend(async () => {
+      const recoveryEmail = "test@example.com";
+      const { token } = await createTestAddress("authtest1", recoveryEmail);
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/request", { recovery_email: recoveryEmail }, { token })
+      );
+
+      expect(status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.expires_in).toBe(300); // 5 minutes
+      expect(body.message).toContain(recoveryEmail);
+    }));
+
+    it("rejects if recovery email doesn't match", async () => {
+      const { token } = await createTestAddress("authtest2", "real@example.com");
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/request", { recovery_email: "wrong@example.com" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("does not match");
+    });
+
+    it("rate limits to 3 requests per hour", async () => withMockResend(async () => {
+      const recoveryEmail = "test3@example.com";
+      const { token } = await createTestAddress("authtest3", recoveryEmail);
+
+      // Make 3 requests (should succeed)
+      for (let i = 0; i < 3; i++) {
+        const { status } = await call(
+          post("/api/auth/verify-recovery/request", { recovery_email: recoveryEmail }, { token })
+        );
+        expect(status).toBe(200);
+      }
+
+      // 4th request should fail
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/request", { recovery_email: recoveryEmail }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("Too many");
+    }));
+
+    it("rejects if already verified", async () => {
+      const recoveryEmail = "test4@example.com";
+      const { token, address } = await createTestAddress("authtest4", recoveryEmail);
+
+      // Manually set recovery_verified to 1
+      await env.DB.prepare(
+        "UPDATE addresses SET recovery_verified = 1 WHERE local_part = ?"
+      ).bind("authtest4").run();
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/request", { recovery_email: recoveryEmail }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("already verified");
+    });
+
+    it("requires valid email format", async () => {
+      const { token } = await createTestAddress("authtest5", "valid@example.com");
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/request", { recovery_email: "not-an-email" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toBeTruthy();
+    });
+  });
+
+  describe("POST /api/auth/verify-recovery/confirm", () => {
+    /** Codes are stored hashed, so tests seed a known code directly */
+    async function seedVerificationCode(
+      localPart: string,
+      code: string,
+      expiresOffset = "+5 minutes"
+    ) {
+      const addressId = (await env.DB.prepare(
+        "SELECT id FROM addresses WHERE local_part = ?"
+      ).bind(localPart).first<{ id: string }>())!.id;
+
+      await env.DB.prepare(
+        `INSERT INTO verification_codes (id, address_id, code_hash, purpose, expires_at)
+         VALUES (?, ?, ?, 'recovery_verification', datetime('now', ?))`
+      ).bind(crypto.randomUUID(), addressId, await hash(code), expiresOffset).run();
+    }
+
+    it("upgrades plan to shell on correct code", async () => {
+      const { token } = await createTestAddress("authtest6", "test6@example.com");
+      await seedVerificationCode("authtest6", "123456");
+
+      // Confirm with correct code
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "123456" }, { token })
+      );
+
+      expect(status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.verified).toBe(true);
+      expect(body.plan).toBe("shell");
+      expect(body.daily_limit).toBe(50);
+
+      // Verify database was updated
+      const addr = await env.DB.prepare(
+        "SELECT plan, recovery_verified FROM addresses WHERE local_part = ?"
+      ).bind("authtest6").first<{ plan: string; recovery_verified: number }>();
+
+      expect(addr?.plan).toBe("shell");
+      expect(addr?.recovery_verified).toBe(1);
+    });
+
+    it("rejects invalid code", async () => {
+      const { token } = await createTestAddress("authtest7", "test7@example.com");
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "999999" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("Invalid");
+    });
+
+    it("rejects expired code", async () => {
+      const { token } = await createTestAddress("authtest8", "test8@example.com");
+      await seedVerificationCode("authtest8", "123456", "-10 minutes");
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "123456" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("Invalid or expired");
+    });
+
+    it("marks code as used after verification", async () => {
+      const { token } = await createTestAddress("authtest9", "test9@example.com");
+      await seedVerificationCode("authtest9", "123456");
+
+      // Use the code once
+      await call(
+        post("/api/auth/verify-recovery/confirm", { code: "123456" }, { token })
+      );
+
+      // Reset the verified flag so the second confirm reaches the code lookup
+      // (otherwise it short-circuits on "already verified")
+      await env.DB.prepare(
+        "UPDATE addresses SET recovery_verified = 0 WHERE local_part = ?"
+      ).bind("authtest9").run();
+
+      // Try to use the code again - should fail because it's marked used
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "123456" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("Invalid or expired");
+    });
+
+    it("invalidates code after 5 wrong guesses", async () => {
+      const { token } = await createTestAddress("authtest13", "test13@example.com");
+      await seedVerificationCode("authtest13", "123456");
+
+      for (let i = 0; i < 5; i++) {
+        const { status } = await call(
+          post("/api/auth/verify-recovery/confirm", { code: "000000" }, { token })
+        );
+        expect(status).toBe(400);
+      }
+
+      // Correct code is now rejected — the code was invalidated by the attempt cap
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "123456" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toContain("Invalid or expired");
+    });
+
+    it("rate limits confirm attempts", async () => {
+      const { token } = await createTestAddress("authtest14", "test14@example.com");
+
+      // 10 attempts allowed per window, 11th is rejected
+      for (let i = 0; i < 10; i++) {
+        const { status } = await call(
+          post("/api/auth/verify-recovery/confirm", { code: "999999" }, { token })
+        );
+        expect(status).toBe(400);
+      }
+
+      const { status } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "999999" }, { token })
+      );
+      expect(status).toBe(429);
+    });
+
+    it("requires 6-digit code format", async () => {
+      const { token } = await createTestAddress("authtest10", "test10@example.com");
+
+      const { status, body } = await call(
+        post("/api/auth/verify-recovery/confirm", { code: "12345" }, { token })
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toBeTruthy();
+    });
+  });
+
+  describe("GET /api/auth/status", () => {
+    it("returns authentication status for unverified user", async () => {
+      const { token, address } = await createTestAddress("authtest11", "test11@example.com");
+
+      const { status, body } = await call(req("/api/auth/status", { token }));
+
+      expect(status).toBe(200);
+      expect(body.address).toBe(address);
+      expect(body.plan).toBe("free");
+      expect(body.daily_limit).toBe(10);
+      expect(body.authentication.recovery_verified).toBe(false);
+      expect(body.authentication.oauth_provider).toBeNull();
+    });
+
+    it("returns authentication status for verified user", async () => {
+      const { token, address } = await createTestAddress("authtest12", "test12@example.com");
+
+      // Manually verify
+      await env.DB.prepare(
+        "UPDATE addresses SET recovery_verified = 1, plan = 'shell', authenticated_at = datetime('now') WHERE local_part = ?"
+      ).bind("authtest12").run();
+
+      const { status, body } = await call(req("/api/auth/status", { token }));
+
+      expect(status).toBe(200);
+      expect(body.plan).toBe("shell");
+      expect(body.daily_limit).toBe(50);
+      expect(body.authentication.recovery_verified).toBe(true);
+      expect(body.authentication.authenticated_at).toBeTruthy();
+    });
+
+    it("requires authentication", async () => {
+      const { status } = await call(req("/api/auth/status"));
+      expect(status).toBe(401);
+    });
+  });
+
+  describe("Send limit enforcement with authentication", () => {
+    /** Backdate send_log entries so the 5/minute burst limiter doesn't trip —
+     * these tests exercise the DAILY limit, which counts via rate_limits */
+    async function resetBurstWindow(localPart: string) {
+      await env.DB.prepare(
+        `UPDATE send_log SET created_at = datetime('now', '-2 minutes')
+         WHERE address_id = (SELECT id FROM addresses WHERE local_part = ?)`
+      ).bind(localPart).run();
+    }
+
+    it("enforces 10/day limit for unauthenticated free tier", async () => withMockResend(async () => {
+      const { token } = await createTestAddress("sendtest1", "send1@example.com");
+
+      // Should be able to send up to 10
+      for (let i = 0; i < 10; i++) {
+        const { status } = await call(
+          post("/api/mail/send", {
+            to: `recipient${i}@example.com`,
+            subject: "Test",
+            body_text: "Test"
+          }, { token })
+        );
+        expect(status).toBe(201);
+        await resetBurstWindow("sendtest1");
+      }
+
+      // 11th should fail with rate limit
+      const { status, body } = await call(
+        post("/api/mail/send", {
+          to: "recipient11@example.com",
+          subject: "Test",
+          body_text: "Test"
+        }, { token })
+      );
+
+      expect(status).toBe(429);
+      expect(body.error).toContain("Daily send limit");
+    }));
+
+    it("allows 50/day for authenticated shell tier", async () => withMockResend(async () => {
+      const { token } = await createTestAddress("sendtest2", "send2@example.com");
+
+      // Verify the address
+      await env.DB.prepare(
+        "UPDATE addresses SET recovery_verified = 1, plan = 'shell' WHERE local_part = ?"
+      ).bind("sendtest2").run();
+
+      // Should be able to send up to 50 (test first 11 to verify >10 works)
+      for (let i = 0; i < 11; i++) {
+        const { status } = await call(
+          post("/api/mail/send", {
+            to: `recipient${i}@example.com`,
+            subject: "Test",
+            body_text: "Test"
+          }, { token })
+        );
+        expect(status).toBe(201);
+        await resetBurstWindow("sendtest2");
+      }
+
+      // Verify it didn't hit rate limit yet
+      const { status, body } = await call(
+        post("/api/mail/send", {
+          to: "recipient12@example.com",
+          subject: "Test",
+          body_text: "Test"
+        }, { token })
+      );
+
+      expect(status).toBe(201);
+      expect(body.error ?? "").not.toContain("Daily send limit");
+    }));
+  });
+});
+
+// ── Anti-Spam Tests ──────────────────────────────────────
+
+describe("Anti-Spam Features", () => {
+  describe("Content Filtering", () => {
+    it("rejects spam content with high spam score", async () => {
+      const { token } = await createTestAddress("spamtest1", "spam1@example.com");
+
+      const { status, body } = await call(
+        post("/api/mail/send", {
+          to: "victim@example.com",
+          subject: "URGENT ACT NOW!!!",
+          body_text: "Guaranteed bitcoin profit! Viagra cheap pharmacy! Click now or expires!"
+        }, { token })
+      );
+
+      expect(status).toBe(403);
+      expect(body.error).toContain("content policy violation");
+    });
+
+    it("allows clean content", async () => {
+      const { token } = await createTestAddress("spamtest2", "spam2@example.com");
+
+      const { status } = await call(
+        post("/api/mail/send", {
+          to: "friend@example.com",
+          subject: "Hello friend",
+          body_text: "Just wanted to say hi and see how you're doing!"
+        }, { token })
+      );
+
+      // Either success or missing Resend key, but not content rejection
+      expect([201, 503]).toContain(status);
+    });
+
+    it("flags suspicious content without rejecting", async () => {
+      const { token } = await createTestAddress("spamtest3", "spam3@example.com");
+
+      const { status } = await call(
+        post("/api/mail/send", {
+          to: "someone@example.com",
+          subject: "Investment opportunity",
+          body_text: "Check out this link: http://example.com http://example2.com"
+        }, { token })
+      );
+
+      // Should not reject, but might flag
+      expect([201, 503]).toContain(status);
+
+      // Check if it was flagged in send_log
+      const flagged = await env.DB.prepare(
+        "SELECT flagged, content_scan_score FROM send_log WHERE address_id = (SELECT id FROM addresses WHERE local_part = ?) ORDER BY created_at DESC LIMIT 1"
+      ).bind("spamtest3").first<{ flagged: number; content_scan_score: number }>();
+
+      // Should be flagged if score was 50-80
+      if (flagged && flagged.content_scan_score >= 50) {
+        expect(flagged.flagged).toBe(1);
+      }
+    });
+  });
+
+  describe("Burst Rate Limiting", () => {
+    it("blocks >5 emails in 1 minute", async () => {
+      const { token } = await createTestAddress("bursttest1", "burst1@example.com");
+
+      // Send 5 emails quickly (should succeed)
+      for (let i = 0; i < 5; i++) {
+        const { status } = await call(
+          post("/api/mail/send", {
+            to: `recipient${i}@example.com`,
+            subject: "Test",
+            body_text: "Test"
+          }, { token })
+        );
+        expect([201, 503]).toContain(status);
+      }
+
+      // 6th email should be rate limited
+      const { status, body } = await call(
+        post("/api/mail/send", {
+          to: "recipient6@example.com",
+          subject: "Test",
+          body_text: "Test"
+        }, { token })
+      );
+
+      expect(status).toBe(429);
+      expect(body.error).toContain("5 emails per minute");
+    });
+  });
+
+  describe("Suspension", () => {
+    it("blocks sending from suspended address", async () => {
+      const { token } = await createTestAddress("suspended1", "susp1@example.com");
+
+      // Suspend the address
+      await env.DB.prepare(
+        "UPDATE addresses SET suspended = 1, suspension_reason = 'test' WHERE local_part = ?"
+      ).bind("suspended1").run();
+
+      const { status, body } = await call(
+        post("/api/mail/send", {
+          to: "someone@example.com",
+          subject: "Test",
+          body_text: "Test"
+        }, { token })
+      );
+
+      expect(status).toBe(403);
+      expect(body.error).toContain("suspended");
+    });
+  });
+
+  describe("Pattern Detection", () => {
+    it("logs suspicious patterns in abuse_log", async () => {
+      const { token } = await createTestAddress("pattern1", "pattern1@example.com");
+
+      // Send 5 emails to trigger pattern detection (>3 to same recipient)
+      // Pattern detection runs BEFORE send_log is created, so we need 5 sends
+      // to see 4 previous sends (which is > 3)
+      for (let i = 0; i < 5; i++) {
+        await call(
+          post("/api/mail/send", {
+            to: "same-person@example.com",
+            subject: "Test",
+            body_text: "Test"
+          }, { token })
+        );
+      }
+
+      // Check if pattern was logged
+      const abuseLog = await env.DB.prepare(
+        "SELECT * FROM abuse_log WHERE address_id = (SELECT id FROM addresses WHERE local_part = ?) AND abuse_type = 'pattern_detection'"
+      ).bind("pattern1").first();
+
+      expect(abuseLog).toBeTruthy();
+    });
+  });
+});
+
+// ── Resend Webhook Tests ─────────────────────────────────
+
+describe("POST /api/webhooks/resend", () => {
+  // Matches RESEND_WEBHOOK_SECRET in vitest.config.ts
+  const TEST_WEBHOOK_KEY_B64 = "dGVzdC13ZWJob29rLXNlY3JldC1rZXk=";
+
+  /** Produce valid Svix signature headers for a webhook payload */
+  async function svixHeaders(payload: unknown): Promise<Record<string, string>> {
+    const body = JSON.stringify(payload);
+    const id = "msg_test";
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const keyBytes = Uint8Array.from(atob(TEST_WEBHOOK_KEY_B64), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const mac = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(`${id}.${timestamp}.${body}`)
+    );
+    const sig = btoa(String.fromCharCode(...new Uint8Array(mac)));
+    return {
+      "svix-id": id,
+      "svix-timestamp": timestamp,
+      "svix-signature": `v1,${sig}`,
+    };
+  }
+
+  it("rejects webhook with forged signature", async () => {
+    const { status } = await call(
+      post("/api/webhooks/resend", { type: "email.bounced", data: {} }, {
+        headers: {
+          "svix-signature": "v1,Zm9yZ2VkLXNpZ25hdHVyZQ==",
+          "svix-timestamp": Math.floor(Date.now() / 1000).toString(),
+          "svix-id": "msg_forged",
+        },
+      })
+    );
+    expect(status).toBe(401);
+  });
+
+  it("rejects webhook with stale timestamp", async () => {
+    const payload = { type: "email.bounced", data: {} };
+    const headers = await svixHeaders(payload);
+    headers["svix-timestamp"] = (Math.floor(Date.now() / 1000) - 3600).toString();
+    const { status } = await call(post("/api/webhooks/resend", payload, { headers }));
+    expect(status).toBe(401);
+  });
+
+  it("processes bounce webhook", async () => {
+    const { token, address } = await createTestAddress("webhook1", "webhook1@example.com");
+    const addressId = (await env.DB.prepare(
+      "SELECT id FROM addresses WHERE local_part = ?"
+    ).bind("webhook1").first<{ id: string }>())!.id;
+
+    // Create a send_log entry
+    const sendLogId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO send_log (id, address_id, recipient_email, subject) VALUES (?, ?, ?, ?)"
+    ).bind(sendLogId, addressId, "bounced@example.com", "Test").run();
+
+    // Send bounce webhook
+    const webhookPayload = {
+      type: "email.bounced",
+      created_at: new Date().toISOString(),
+      data: {
+        email_id: "resend-123",
+        from: address,
+        to: "bounced@example.com",
+        subject: "Test",
+        created_at: new Date().toISOString(),
+        tags: {
+          address_id: addressId,
+          send_log_id: sendLogId
+        },
+        bounce_reason: "Mailbox does not exist"
+      }
+    };
+
+    const { status } = await call(
+      post("/api/webhooks/resend", webhookPayload, {
+        headers: await svixHeaders(webhookPayload),
+      })
+    );
+
+    expect(status).toBe(200);
+
+    // Verify bounce was recorded
+    const bounce = await env.DB.prepare(
+      "SELECT * FROM bounce_tracking WHERE address_id = ? AND recipient = ?"
+    ).bind(addressId, "bounced@example.com").first();
+
+    expect(bounce).toBeTruthy();
+  });
+
+  it("suspends address on spam complaint", async () => {
+    const { token } = await createTestAddress("webhook2", "webhook2@example.com");
+    const addressId = (await env.DB.prepare(
+      "SELECT id FROM addresses WHERE local_part = ?"
+    ).bind("webhook2").first<{ id: string }>())!.id;
+
+    // Send complaint webhook
+    const webhookPayload = {
+      type: "email.complained",
+      created_at: new Date().toISOString(),
+      data: {
+        email_id: "resend-456",
+        from: "webhook2@shellmail.ai",
+        to: "reporter@example.com",
+        subject: "Test",
+        created_at: new Date().toISOString(),
+        tags: {
+          address_id: addressId
+        }
+      }
+    };
+
+    await call(
+      post("/api/webhooks/resend", webhookPayload, {
+        headers: await svixHeaders(webhookPayload),
+      })
+    );
+
+    // Verify address was suspended
+    const addr = await env.DB.prepare(
+      "SELECT suspended, suspension_reason FROM addresses WHERE id = ?"
+    ).bind(addressId).first<{ suspended: number; suspension_reason: string }>();
+
+    expect(addr?.suspended).toBe(1);
+    expect(addr?.suspension_reason).toContain("spam");
   });
 });

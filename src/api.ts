@@ -14,6 +14,11 @@ import {
   validateEmail,
 } from "./auth";
 import { sendViaResend, generateMessageId, getSendLimit } from "./send";
+import { scanContent } from "./content-filter";
+import { detectAbusePatterns, logAbusePattern } from "./patterns";
+import { handleResendWebhook } from "./webhooks/resend";
+import { requestRecoveryVerificationWithEmail, confirmRecoveryVerification } from "./auth/verify";
+import { getEffectiveSendLimit } from "./auth/upgrade";
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -190,9 +195,9 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
   // recoveryHash already computed above for rate limiting
 
   await env.DB.prepare(
-    "INSERT INTO addresses (id, local_part, domain, token_hash, recovery_hash) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO addresses (id, local_part, domain, token_hash, recovery_hash, ip_address) VALUES (?, ?, ?, ?, ?, ?)"
   )
-    .bind(id, local.toLowerCase(), env.DOMAIN, tokenHash, recoveryHash)
+    .bind(id, local.toLowerCase(), env.DOMAIN, tokenHash, recoveryHash, ip)
     .run();
 
   return json(
@@ -505,10 +510,6 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
   const addr = await authenticate(request, env.DB);
   if (addr instanceof Response) return addr;
 
-  if (!env.RESEND_API_KEY) {
-    return error("Email sending not configured", 503);
-  }
-
   let body: SendEmailRequest;
   try {
     body = await request.json();
@@ -527,8 +528,63 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
     return error("'body_text' is required");
   }
 
-  // Check rate limit
-  const limit = getSendLimit(addr.plan || "free");
+  // ── Anti-Spam Checks ──
+
+  // 1. Check if address is suspended
+  if (addr.suspended) {
+    return error(`Address suspended: ${addr.suspension_reason || 'abuse detected'}`, 403);
+  }
+
+  // 2. Content filtering
+  const contentScan = await scanContent(
+    env,
+    body.subject,
+    body.body_text,
+    body.body_html,
+    [body.to]
+  );
+
+  if (contentScan.action === 'reject') {
+    // Log the abuse
+    await env.DB.prepare(
+      `INSERT INTO abuse_log (id, address_id, abuse_type, severity, details, action_taken)
+       VALUES (?, ?, 'content_filter', 'high', ?, 'rejected')`
+    ).bind(
+      generateId(),
+      addr.id,
+      `Spam score: ${contentScan.score}, matches: ${contentScan.matches.join(', ')}`
+    ).run();
+
+    return error('Message rejected: content policy violation', 403);
+  }
+
+  // 3. Pattern detection
+  const ipAddress = request.headers.get('CF-Connecting-IP');
+  const patterns = await detectAbusePatterns(env, addr.id, ipAddress);
+
+  if (patterns.suspicious) {
+    await logAbusePattern(env, addr.id, ipAddress, patterns, 'flagged');
+  }
+
+  // 4. Burst rate limiting (max 5 emails in 1 minute)
+  const recentSends = await env.DB.prepare(
+    `SELECT COUNT(*) as count
+     FROM send_log
+     WHERE address_id = ?
+       AND created_at > datetime('now', '-1 minute')`
+  ).bind(addr.id).first<{ count: number }>();
+
+  if (recentSends && recentSends.count >= 5) {
+    return error('Rate limit exceeded: max 5 emails per minute', 429);
+  }
+
+  // Check rate limit (considers authentication)
+  const limit = getEffectiveSendLimit({
+    plan: addr.plan,
+    recovery_verified: addr.recovery_verified,
+    oauth_provider: addr.oauth_provider,
+    stripe_customer_id: null // TODO: add to Address type when Stripe integration complete
+  });
   const allowed = await checkRateLimit(
     env.DB,
     `send:${addr.id}`,
@@ -536,7 +592,8 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
     24 * 60 * 60 * 1000 // 24 hours
   );
   if (!allowed) {
-    return error(`Daily send limit reached (${limit}/day for ${addr.plan || "free"} plan)`, 429);
+    const authStatus = addr.recovery_verified || addr.oauth_provider ? "authenticated" : "unauthenticated";
+    return error(`Daily send limit reached (${limit}/day for ${addr.plan} plan, ${authStatus})`, 429);
   }
 
   // Handle reply threading
@@ -572,6 +629,25 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
   // Generate Message-ID for this email
   const messageId = generateMessageId(addr.domain);
 
+  // Create send_log entry (for bounce tracking and pattern detection)
+  const sendLogId = generateId();
+  await env.DB.prepare(
+    `INSERT INTO send_log (id, address_id, recipient_email, subject, content_scan_score, flagged)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(
+    sendLogId,
+    addr.id,
+    body.to,
+    body.subject,
+    contentScan.score,
+    contentScan.action === 'flag' ? 1 : 0
+  ).run();
+
+  // Check Resend configuration before attempting to send
+  if (!env.RESEND_API_KEY) {
+    return error("Email sending not configured", 503);
+  }
+
   // Send via Resend
   const fromAddr = `${addr.local_part}@${addr.domain}`;
   const result = await sendViaResend(env.RESEND_API_KEY, {
@@ -584,10 +660,21 @@ async function sendMail(request: Request, env: Env): Promise<Response> {
       "Message-ID": messageId,
       ...replyHeaders,
     },
+    tags: {
+      address_id: addr.id,
+      send_log_id: sendLogId,
+    },
   });
 
   if (!result.success) {
     return error(result.error || "Failed to send email", 500);
+  }
+
+  // Update send_log with Resend email ID
+  if (result.id) {
+    await env.DB.prepare(
+      `UPDATE send_log SET resend_email_id = ? WHERE id = ?`
+    ).bind(result.id, sendLogId).run();
   }
 
   // Store sent email
@@ -1030,6 +1117,105 @@ async function deleteAddress(request: Request, env: Env): Promise<Response> {
   });
 }
 
+// ── Authentication Endpoints ─────────────────────────────
+
+/** POST /api/auth/verify-recovery/request — request OTP to verify recovery email */
+async function requestVerifyRecovery(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  let body: { recovery_email: string };
+  try {
+    body = await request.json();
+  } catch {
+    return error("Invalid JSON body");
+  }
+
+  if (!body.recovery_email || !validateEmail(body.recovery_email)) {
+    return error("Valid recovery_email required");
+  }
+
+  const result = await requestRecoveryVerificationWithEmail(env, addr, body.recovery_email);
+
+  if (!result.success) {
+    return error(result.error || "Verification request failed", 400);
+  }
+
+  return json({
+    ok: true,
+    message: `Verification code sent to ${body.recovery_email}`,
+    expires_in: result.expiresIn
+  });
+}
+
+/** POST /api/auth/verify-recovery/confirm — confirm OTP code */
+async function confirmVerifyRecovery(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  let body: { code: string };
+  try {
+    body = await request.json();
+  } catch {
+    return error("Invalid JSON body");
+  }
+
+  if (!body.code || !/^\d{6}$/.test(body.code)) {
+    return error("Valid 6-digit code required");
+  }
+
+  // Rate limit guesses: codes are 6 digits, so unthrottled confirms would be
+  // brute-forceable; per-code attempt caps in confirmRecoveryVerification are
+  // the second layer
+  const allowed = await checkRateLimit(
+    env.DB,
+    `verify-confirm:${addr.id}`,
+    10,
+    15 * 60 * 1000
+  );
+  if (!allowed) {
+    return error("Too many verification attempts. Try again later.", 429);
+  }
+
+  const result = await confirmRecoveryVerification(env, addr, body.code);
+
+  if (!result.success) {
+    return error(result.error || "Verification failed", 400);
+  }
+
+  return json({
+    ok: true,
+    verified: true,
+    plan: result.plan,
+    daily_limit: result.dailyLimit,
+    message: `Recovery email verified! Your daily send limit is now ${result.dailyLimit} emails.`
+  });
+}
+
+/** GET /api/auth/status — get authentication status */
+async function getAuthStatus(request: Request, env: Env): Promise<Response> {
+  const addr = await authenticate(request, env.DB);
+  if (addr instanceof Response) return addr;
+
+  const effectiveLimit = getEffectiveSendLimit({
+    plan: addr.plan,
+    recovery_verified: addr.recovery_verified,
+    oauth_provider: addr.oauth_provider,
+    stripe_customer_id: null // TODO: add to Address type
+  });
+
+  return json({
+    address: `${addr.local_part}@${addr.domain}`,
+    plan: addr.plan,
+    daily_limit: effectiveLimit,
+    authentication: {
+      recovery_verified: Boolean(addr.recovery_verified),
+      oauth_provider: addr.oauth_provider || null,
+      authenticated_at: addr.authenticated_at || null
+    }
+  });
+}
+
 // ── Router ───────────────────────────────────────────────
 
 function matchRoute(
@@ -1060,6 +1246,14 @@ function matchRoute(
     return { handler: "sendMail" };
   if (method === "GET" && pathname === "/api/mail/sent")
     return { handler: "getSentMail" };
+  if (method === "POST" && pathname === "/api/webhooks/resend")
+    return { handler: "resendWebhook" };
+  if (method === "POST" && pathname === "/api/auth/verify-recovery/request")
+    return { handler: "requestVerifyRecovery" };
+  if (method === "POST" && pathname === "/api/auth/verify-recovery/confirm")
+    return { handler: "confirmVerifyRecovery" };
+  if (method === "GET" && pathname === "/api/auth/status")
+    return { handler: "getAuthStatus" };
 
   // /api/mail/threads/:id route (must come before generic /api/mail/:id)
   const threadMatch = pathname.match(/^\/api\/mail\/threads\/([a-f0-9-]+)$/);
@@ -1170,6 +1364,18 @@ export default {
           break;
         case "getSentMail":
           response = await getSentMail(request, env);
+          break;
+        case "resendWebhook":
+          response = await handleResendWebhook(request, env);
+          break;
+        case "requestVerifyRecovery":
+          response = await requestVerifyRecovery(request, env);
+          break;
+        case "confirmVerifyRecovery":
+          response = await confirmVerifyRecovery(request, env);
+          break;
+        case "getAuthStatus":
+          response = await getAuthStatus(request, env);
           break;
         default:
           response = error("Not found", 404);
