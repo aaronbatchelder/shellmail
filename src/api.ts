@@ -152,6 +152,47 @@ async function authenticate(
 
 // ── Admin Stats ─────────────────────────────────────────
 
+/** Public aggregate funnel metrics — counts only, no addresses or content.
+ *  Safe to expose unauthenticated (status-page style); consumed by the
+ *  weekly usage-report routine. WELCOME_CUTOVER is when welcome-email
+ *  seeding shipped, splitting activation cohorts. */
+const WELCOME_CUTOVER = "2026-08-26 02:24:00";
+
+async function getFunnelStats(env: Env) {
+  const row = await env.DB.prepare(
+    `SELECT
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL) AS total_addresses,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at > datetime('now','-7 days')) AS signups_7d,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at > datetime('now','-30 days')) AS signups_30d,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND last_activity_at > datetime('now','-7 days')) AS active_7d,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND last_activity_at > datetime('now','-30 days')) AS active_30d,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND messages_received = 0) AS never_received_mail,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND messages_received > 0) AS received_mail,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND messages_received >= 5) AS received_5plus,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND recovery_verified = 1) AS verified_tier,
+      (SELECT COUNT(*) FROM emails WHERE received_at > datetime('now','-7 days')) AS emails_7d,
+      (SELECT COUNT(*) FROM send_log WHERE created_at > datetime('now','-30 days')) AS sends_30d,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at < ?1) AS cohort_pre_welcome,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at < ?1 AND messages_received > 0) AS cohort_pre_welcome_activated,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at >= ?1) AS cohort_post_welcome,
+      (SELECT COUNT(*) FROM addresses WHERE deleted_at IS NULL AND created_at >= ?1 AND messages_received > 0) AS cohort_post_welcome_activated`
+  )
+    .bind(WELCOME_CUTOVER)
+    .first<Record<string, number>>();
+
+  const weekly = await env.DB.prepare(
+    `SELECT strftime('%Y-%W', created_at) AS week, COUNT(*) AS signups
+     FROM addresses GROUP BY week ORDER BY week DESC LIMIT 8`
+  ).all<{ week: string; signups: number }>();
+
+  return {
+    generated_at: new Date().toISOString(),
+    note: "Aggregate counts only. 'activated' means the address received at least one real inbound email (welcome emails excluded). Activity tracking includes API usage since 2026-08-26.",
+    ...row,
+    signups_by_week: weekly.results,
+  };
+}
+
 async function getStats(env: Env) {
   const now = new Date();
   const today = now.toISOString().split("T")[0];
@@ -1511,6 +1552,13 @@ export default {
       // Health check
       if (url.pathname === "/health") {
         return withCors(json({ service: "shellmail", status: "ok", domain: env.DOMAIN }));
+      }
+      // Public aggregate funnel metrics (counts only, no PII)
+      if (url.pathname === "/api/stats/funnel") {
+        const stats = await getFunnelStats(env);
+        const resp = json(stats);
+        resp.headers.set("Cache-Control", "public, max-age=300");
+        return withCors(resp);
       }
       // Admin stats — secret must be sent via header (query strings end up in logs)
       if (url.pathname === "/api/admin/stats") {

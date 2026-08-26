@@ -308,6 +308,21 @@ beforeEach(async () => {
 
 // ── Health ───────────────────────────────────────────────
 
+describe("GET /api/stats/funnel", () => {
+  it("returns aggregate counts without auth and without PII", async () => {
+    await createTestAddress("funnelstats");
+    const { status, body } = await call(req("/api/stats/funnel"));
+    expect(status).toBe(200);
+    expect(body.total_addresses).toBeGreaterThanOrEqual(1);
+    expect(body).toHaveProperty("never_received_mail");
+    expect(body).toHaveProperty("cohort_post_welcome");
+    expect(Array.isArray(body.signups_by_week)).toBe(true);
+    // No PII: response must not contain any address strings
+    expect(JSON.stringify(body)).not.toContain("funnelstats");
+    expect(JSON.stringify(body)).not.toContain("@shellmail.ai");
+  });
+});
+
 describe("Health", () => {
   it("GET /health returns ok", async () => {
     const { status, body } = await call(req("/health"));
