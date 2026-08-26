@@ -130,6 +130,23 @@ async function authenticate(
     .first<Address>();
 
   if (!addr) return error("Invalid token", 401);
+
+  // Track API usage as activity (previously only inbound mail counted, which
+  // made polling-but-empty inboxes indistinguishable from abandoned ones).
+  // Throttled to one write per hour per address; staleness checked in JS so
+  // the common case costs no extra query.
+  const staleMs = 60 * 60 * 1000;
+  // D1 datetime('now') yields "YYYY-MM-DD HH:MM:SS" (UTC, no zone marker)
+  const lastIso = addr.last_activity_at
+    ? addr.last_activity_at.replace(" ", "T") + (addr.last_activity_at.endsWith("Z") ? "" : "Z")
+    : null;
+  if (!lastIso || !(Date.now() - new Date(lastIso).getTime() <= staleMs)) {
+    await db
+      .prepare("UPDATE addresses SET last_activity_at = datetime('now') WHERE id = ?")
+      .bind(addr.id)
+      .run();
+  }
+
   return addr;
 }
 
@@ -292,14 +309,68 @@ async function createAddress(request: Request, env: Env): Promise<Response> {
     throw e;
   }
 
+  // Seed the inbox with a welcome email so the first `inbox` call is never
+  // empty — the strongest drop-off point is addresses that never see mail.
+  // Failure here must not fail address creation.
+  try {
+    await insertWelcomeEmail(env, id, `${local.toLowerCase()}@${env.DOMAIN}`);
+  } catch (e) {
+    console.error("Failed to insert welcome email:", e);
+  }
+
   return json(
     {
       address: `${local.toLowerCase()}@${env.DOMAIN}`,
       token,
-      note: "Save this token — it will not be shown again.",
+      note: "Save this token — it will not be shown again. If you ever lose it, POST /api/recover with your address and recovery email to get a new one.",
     },
     201
   );
+}
+
+/** Insert a synthetic welcome email into a brand-new inbox.
+ *  otp_code/otp_extracted stay unset so it can never shadow a real OTP,
+ *  and messages_received/last_activity_at are untouched so activation
+ *  metrics keep meaning "real mail arrived". expires_at is NULL so it
+ *  survives retention cleanup as a permanent anchor. */
+async function insertWelcomeEmail(env: Env, addressId: string, address: string): Promise<void> {
+  const messageId = generateMessageId(env.DOMAIN);
+  const bodyText = `Welcome to ShellMail — your inbox is live.
+
+This email is proof that ${address} can receive mail. Try these:
+
+  1. List your inbox:        shellmail inbox
+  2. Read this email:        shellmail read <id from inbox>
+  3. Test OTP extraction:    sign up for any service with ${address},
+     then run:               shellmail otp --wait 30
+     The verification code is extracted automatically.
+
+Two things worth doing now:
+  - Your API token was shown exactly once. If you lose it, recover with:
+      shellmail recover ${address} <your-recovery-email>
+  - Verify your recovery email to raise your send limit from 10/day to 50/day:
+      shellmail auth verify-recovery
+
+Docs: https://shellmail.ai/llms.txt   API: https://shellmail.ai/openapi.json
+
+— ShellMail`;
+
+  await env.DB.prepare(
+    `INSERT INTO emails (id, address_id, from_addr, from_name, to_addr, subject, body_text, otp_extracted, direction, message_id, thread_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'inbound', ?, ?)`
+  )
+    .bind(
+      generateId(),
+      addressId,
+      "welcome@shellmail.ai",
+      "ShellMail",
+      address,
+      "Welcome to ShellMail — your inbox is live",
+      bodyText,
+      messageId,
+      messageId
+    )
+    .run();
 }
 
 /** Simple rate limiter using D1 — max attempts per key per window.

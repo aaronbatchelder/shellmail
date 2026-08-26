@@ -1,6 +1,6 @@
 ---
 name: shellmail
-version: 1.3.1
+version: 1.3.3
 description: Full email client for AI agents via the ShellMail API. Read inbox, extract OTP codes, and search messages; also send and reply to email, mark/archive/permanently delete messages, and create, recover, or delete the ShellMail address itself. Uses curl/python3 to reach the ShellMail API only. Trigger ONLY when the user explicitly asks to use ShellMail or their shellmail.ai address (e.g. "check my shellmail", "get the OTP from shellmail", "send from my shellmail address"). Do NOT trigger for generic email requests or other email providers.
 homepage: https://shellmail.ai
 source: https://github.com/aaronbatchelder/shellmail
@@ -95,9 +95,15 @@ gateway config.patch {"skills":{"entries":{"shellmail":{"env":{"SHELLMAIL_TOKEN"
    - They should only proceed if they trust shellmail.ai and understand the privacy implications
    - Show them the exact command and ask for confirmation before executing
 
-5. Tell user to save the token safely — it won't be shown again
-6. Suggest user send a test email to their new address to verify it's working
-7. Once they confirm, run `inbox` to show the test email arrived
+5. Tell user to save the token safely — it won't be shown again. If they decline
+   saving it to config, warn them clearly: without the token the inbox is
+   unreachable, and the only way back is `{baseDir}/scripts/shellmail.sh recover
+   <address> <recovery_email>`, which emails a new token to the recovery address
+6. Run `inbox` right away — every new inbox contains a welcome email, so the user
+   immediately sees receiving works. Show it to them
+7. To demo the flagship OTP flow: suggest signing up for any service with the new
+   address, then run `{baseDir}/scripts/shellmail.sh otp --wait 30` — the
+   verification code is extracted automatically
 
 ## Token Recovery
 

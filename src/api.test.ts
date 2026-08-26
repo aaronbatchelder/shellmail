@@ -103,6 +103,11 @@ async function createTestAddress(
   );
   expect(status).toBe(201);
   expect(body.token).toMatch(/^sm_/);
+  // Strip the seeded welcome email so mail-mechanics tests start pristine
+  // (welcome behavior has its own dedicated tests)
+  await env.DB.prepare(
+    "DELETE FROM emails WHERE from_addr = 'welcome@shellmail.ai' AND address_id = (SELECT id FROM addresses WHERE local_part = ?)"
+  ).bind(local.toLowerCase()).run();
   return { token: body.token, address: body.address };
 }
 
@@ -345,6 +350,42 @@ describe("POST /api/addresses", () => {
     expect(token).toMatch(/^sm_[a-f0-9]{64}$/);
   });
 
+  it("seeds a welcome email into the new inbox", async () => {
+    // Create directly (createTestAddress strips the welcome email)
+    const { body: created } = await call(
+      post("/api/addresses", { local: "welcomed", recovery_email: "w@example.com" })
+    );
+
+    const { status, body } = await call(req("/api/mail", { token: created.token }));
+    expect(status).toBe(200);
+    expect(body.emails).toHaveLength(1);
+    expect(body.emails[0].from_addr).toBe("welcome@shellmail.ai");
+    expect(body.emails[0].subject).toContain("Welcome to ShellMail");
+    expect(body.unread_count).toBe(1);
+  });
+
+  it("welcome email never shadows the OTP endpoint", async () => {
+    const { body: created } = await call(
+      post("/api/addresses", { local: "welcomed2", recovery_email: "w2@example.com" })
+    );
+
+    const { status, body } = await call(req("/api/mail/otp", { token: created.token }));
+    expect(status).toBe(200);
+    expect(body.found).toBe(false);
+  });
+
+  it("welcome email does not count as real activity", async () => {
+    const { body: created } = await call(
+      post("/api/addresses", { local: "welcomed3", recovery_email: "w3@example.com" })
+    );
+    expect(created.token).toMatch(/^sm_/);
+
+    const addr = await env.DB.prepare(
+      "SELECT messages_received FROM addresses WHERE local_part = 'welcomed3'"
+    ).first<{ messages_received: number }>();
+    expect(addr?.messages_received).toBe(0);
+  });
+
   it("lowercases local part", async () => {
     const { address } = await createTestAddress("MyAgent");
     expect(address).toBe("myagent@shellmail.ai");
@@ -429,6 +470,22 @@ describe("Authentication", () => {
     );
     expect(status).toBe(401);
     expect(body.error).toContain("Invalid token");
+  });
+
+  it("records API usage as activity", async () => {
+    const { token } = await createTestAddress("activitycheck");
+
+    const before = await env.DB.prepare(
+      "SELECT last_activity_at FROM addresses WHERE local_part = 'activitycheck'"
+    ).first<{ last_activity_at: string | null }>();
+    expect(before?.last_activity_at).toBeNull();
+
+    await call(req("/api/mail", { token }));
+
+    const after = await env.DB.prepare(
+      "SELECT last_activity_at FROM addresses WHERE local_part = 'activitycheck'"
+    ).first<{ last_activity_at: string | null }>();
+    expect(after?.last_activity_at).not.toBeNull();
   });
 
   it("rejects malformed token (no sm_ prefix)", async () => {
