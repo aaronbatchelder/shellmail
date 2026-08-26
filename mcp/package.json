@@ -1,11 +1,11 @@
 {
   "name": "shellmail-mcp",
   "version": "1.3.0",
-  "description": "MCP server for ShellMail \u2014 full email client for AI agents: read inbox, extract OTPs, search, send/reply, and permanently delete messages (destructive tools are annotated and require confirmation)",
+  "description": "MCP server for ShellMail — full email client for AI agents: read inbox, extract OTPs, search, send/reply, and permanently delete messages (destructive tools are annotated and require confirmation)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "shellmail-mcp": "./dist/index.js"
+    "shellmail-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -25,7 +25,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aaronbatchelder/shellmail"
+    "url": "git+https://github.com/aaronbatchelder/shellmail.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
