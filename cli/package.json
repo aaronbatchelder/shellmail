@@ -1,6 +1,6 @@
 {
   "name": "shellmail",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "CLI for ShellMail \u2014 full email client for AI agents: check mail, extract OTPs, search, send/reply, delete, and manage addresses",
   "type": "module",
   "main": "dist/index.js",

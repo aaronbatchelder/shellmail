@@ -30,7 +30,7 @@ program
     "Full email client for AI agents — check mail, extract OTPs, search, send/reply, delete, and manage addresses"
   )
   // Keep in sync with cli/package.json
-  .version("1.4.0")
+  .version("1.5.0")
   .option("-p, --profile <name>", "Use a specific profile");
 
 // ── Setup Command ────────────────────────────────────────
