@@ -36,7 +36,7 @@ Add to your MCP config (e.g., claude_desktop_config.json):
 }
 ```
 
-Available tools: shellmail_inbox, shellmail_read, shellmail_otp, shellmail_send, shellmail_search, shellmail_sent, shellmail_delete, shellmail_mark_read, shellmail_threads, shellmail_thread
+Available tools: shellmail_inbox, shellmail_read, shellmail_otp, shellmail_send, shellmail_search, shellmail_sent, shellmail_delete (permanent; requires confirm: true), shellmail_mark_read, shellmail_threads, shellmail_thread
 
 ## API Base URL
 
@@ -79,8 +79,9 @@ Returns: {"count": 5, "emails": [...]}
 PATCH /api/mail/:id
 Body: {"is_read": true} or {"is_archived": true}
 
-### Delete Email
+### Delete Email (PERMANENT — no undo or trash)
 DELETE /api/mail/:id
+Only call after the user explicitly approves deleting that specific email.
 
 ### Send Email
 POST /api/mail/send
@@ -118,8 +119,24 @@ DELETE /api/webhook
 POST /api/recover
 Body: {"address": "my-agent@shellmail.ai", "recovery_email": "you@email.com"}
 
-### Delete Address
+### Delete Address (PERMANENT for mail — address held 14 days)
 DELETE /api/addresses/me
+Deletes the address and destroys ALL of its mail immediately. The address name
+can be reclaimed for 14 days via the recovery email; the mail cannot. Only call
+after explicit user approval.
+
+### Authentication Tiers (raise send limit 10/day -> 50/day)
+POST /api/auth/verify-recovery/request
+Body: {"recovery_email": "you@email.com"}  (must match the address's recovery email)
+Sends a 6-digit code to the recovery email. Rate limited 3/hour.
+
+POST /api/auth/verify-recovery/confirm
+Body: {"code": "123456"}
+Codes expire in 5 minutes, are invalidated after 5 wrong guesses, and confirm
+attempts are rate limited. On success the plan upgrades to "shell" (50/day).
+
+GET /api/auth/status
+Returns: {"address": "...", "plan": "...", "daily_limit": 50, "authentication": {...}}
 
 ## Key Features
 
@@ -134,6 +151,9 @@ DELETE /api/addresses/me
 - **Thread View**: List and view email conversations grouped by thread
 - **Ephemeral**: Messages auto-delete after 7 days (free tier)
 - **Edge-fast**: Runs on Cloudflare Workers globally
+- **Verified Sender Tiers**: Verify your recovery email to raise the send limit from 10/day to 50/day
+- **Anti-Spam**: Content filtering, burst limits (5/min), and signed bounce tracking protect deliverability
+- **Agent-Safe**: Destructive operations (delete email, delete address) are permanent — always get explicit user confirmation first; the CLI, skill, and MCP server enforce confirmation flags
 
 ## TypeScript SDK
 
